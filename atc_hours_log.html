@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATC Hours Log</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --border-bright: #484f58;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #484f58;
+    --accent: #58a6ff;
+    --accent-dim: #1f3a5f;
+    --success: #3fb950;
+    --warning: #d29922;
+    --danger: #f85149;
+    --mono: 'Courier New', 'Consolas', monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .radar-icon { width: 32px; height: 32px; border: 2px solid var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
+  .radar-icon::after { content: ''; width: 12px; height: 2px; background: var(--accent); position: absolute; transform-origin: left center; left: 50%; top: 50%; transform: translateY(-50%) rotate(45deg); }
+  .radar-icon::before { content: ''; width: 5px; height: 5px; background: var(--accent); border-radius: 50%; position: absolute; }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text); }
+  .subtitle { font-size: 11px; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase; }
+  .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { background: transparent; border: 1px solid var(--border-bright); color: var(--text); padding: 6px 14px; border-radius: 6px; font-size: 13px; font-family: var(--sans); cursor: pointer; transition: background 0.15s, border-color 0.15s; white-space: nowrap; }
+  button:hover { background: var(--surface2); border-color: var(--accent); }
+  button.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  button.primary:hover { background: #1f4080; }
+  button.newday-btn { border-color: var(--warning); color: var(--warning); }
+  button.newday-btn:hover { background: #2d2010; }
+  button.danger-btn { border-color: var(--danger); color: var(--danger); }
+  button.danger-btn:hover { background: #2d1b1b; }
+  .main { flex: 1; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .log-wrapper { flex: 1; overflow-y: auto; overflow-x: hidden; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  thead { position: sticky; top: 0; z-index: 10; background: var(--surface); }
+  thead th { padding: 10px 16px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); text-align: left; border-bottom: 1px solid var(--border); }
+  .row-num { color: var(--text-dim); font-family: var(--mono); font-size: 11px; padding: 0 8px 0 16px !important; width: 40px; text-align: right; }
+  tr.data-row { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  tr.data-row:hover { background: var(--surface); }
+  tr.data-row td { padding: 3px 4px; vertical-align: middle; }
+  tr.data-row td:first-child { padding-left: 8px; }
+  tr.data-row td:last-child { padding-right: 8px; }
+  .date-divider { background: var(--surface2); border-top: 2px solid var(--warning); border-bottom: 1px solid var(--border-bright); }
+  .date-divider td { padding: 8px 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--warning); text-align: center; }
+  input.cell-input { background: transparent; border: 1px solid transparent; color: var(--text); font-family: var(--mono); font-size: 14px; padding: 5px 8px; border-radius: 4px; width: 100%; outline: none; transition: border-color 0.15s, background 0.15s; letter-spacing: 0.05em; }
+  input.cell-input:hover { border-color: var(--border-bright); }
+  input.cell-input:focus { border-color: var(--accent); background: var(--surface2); }
+  input.cell-input.time-input { font-size: 15px; font-weight: 600; color: var(--accent); }
+  input.cell-input.initials-input { text-transform: uppercase; letter-spacing: 0.12em; }
+  input.cell-input.how-input { color: #3fb950; }
+  input.cell-input.tow-input { color: #e3b341; }
+  input.cell-input.error { border-color: var(--danger) !important; color: var(--danger); }
+  input.cell-input:disabled { opacity: 0.3; cursor: default; }
+  input.cell-input.empty-field { border-color: var(--danger) !important; background: rgba(248,81,73,0.07); }
+  input.cell-input.long-shift { border-color: #b8860b !important; background: rgba(210,153,34,0.13); color: #f0c040 !important; }
+  .delete-btn { background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 4px; line-height: 1; font-family: var(--sans); transition: color 0.15s, background 0.15s; width: 100%; display: block; }
+  .delete-btn:hover { color: var(--danger); background: #2d1b1b; }
+  .add-row-area { padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: 8px; }
+  .add-row-btn { flex: 1; padding: 10px; border-style: dashed; color: var(--text-muted); font-size: 13px; letter-spacing: 0.05em; }
+  .add-row-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+  .add-newday-btn { padding: 10px 18px; border-style: dashed; border-color: var(--warning); color: var(--warning); font-size: 13px; letter-spacing: 0.05em; }
+  .add-newday-btn:hover { background: #2d2010; border-color: var(--warning); }
+  footer { padding: 10px 24px; border-top: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .stat { display: flex; flex-direction: column; gap: 1px; }
+  .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+  .stat-value { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
+  .help-bar { padding: 6px 16px; background: var(--surface2); border-bottom: 1px solid var(--border); display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+  .help-item { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+  kbd { background: var(--surface); border: 1px solid var(--border-bright); border-radius: 3px; padding: 0 4px; font-size: 10px; font-family: var(--mono); color: var(--text); }
+  .legend { display: flex; gap: 16px; align-items: center; margin-left: auto; }
+  .legend-item { font-size: 11px; display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border-bright); border-radius: 10px; width: 520px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column; }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .modal-header h2 { font-size: 15px; font-weight: 600; }
+  .modal-close { font-size: 20px; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+  .modal-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+  .export-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  .export-table th, .export-table td { padding: 6px 10px; border: 1px solid var(--border); text-align: left; }
+  .export-table th { background: var(--surface2); color: var(--text-muted); font-size: 11px; }
+  .export-table tr:nth-child(even) td { background: var(--surface2); }
+  .newday-tag { font-size: 10px; background: #2d2010; color: var(--warning); border: 1px solid var(--warning); border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
+  td:has(.newday-tag) { display: flex; align-items: center; }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="radar-icon"></div>
+    <div>
+      <h1>ATC Hours Log</h1>
+      <div class="subtitle" id="airport-subtitle">Loading…</div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="primary" onclick="openExport()">Export to Google Sheets ↗</button>
+    <button onclick="openSummary()">Monthly summary</button>
+    <button class="danger-btn" onclick="confirmClear()">Clear all</button>
+  </div>
+</header>
+
+<div class="help-bar">
+  <div class="help-item"><kbd>Tab</kbd> advance field</div>
+  <div class="help-item"><kbd>Enter</kbd> next row</div>
+  <div class="help-item"><kbd>↑</kbd><kbd>↓</kbd> navigate rows</div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>HOW — hand over</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e3b341"></div>TOW — take over</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="log-wrapper">
+    <table id="log-table">
+      <thead>
+        <tr>
+          <th style="width:36px"></th>
+          <th style="width:100px">UTC Time</th>
+          <th style="width:120px">HOW</th>
+          <th style="width:120px">TOW</th>
+          <th style="width:36px"></th>
+        </tr>
+      </thead>
+      <tbody id="log-body"></tbody>
+    </table>
+  </div>
+  <div class="add-row-area">
+    <button class="add-row-btn" onclick="addRow()">+ add entry</button>
+    <button class="add-newday-btn" onclick="addNewDay()">+ new day</button>
+  </div>
+</div>
+
+<footer>
+  <div class="stat"><div class="stat-label">Entries today</div><div class="stat-value" id="stat-today">0</div></div>
+  <div class="stat"><div class="stat-label">Total entries</div><div class="stat-value" id="stat-total">0</div></div>
+  <div class="stat"><div class="stat-label">Controllers</div><div class="stat-value" id="stat-controllers">—</div></div>
+  <div class="stat"><div class="stat-label">Last entry</div><div class="stat-value" id="stat-last">—</div></div>
+</footer>
+
+<!-- New day date picker modal -->
+<div class="modal-overlay" id="newday-modal">
+  <div class="modal" style="width:320px">
+    <div class="modal-header">
+      <h2>Select date for new day</h2>
+      <button class="modal-close" onclick="closeModal('newday-modal')">×</button>
+    </div>
+    <div class="modal-body" style="padding:20px">
+      <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Date (UTC)</label>
+      <input type="date" id="newday-date-input"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);font-family:var(--mono);font-size:15px;padding:8px 10px;border-radius:6px;outline:none;color-scheme:dark"
+        onkeydown="if(event.key==='Enter')confirmNewDay()"
+      />
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeModal('newday-modal')">Cancel</button>
+      <button class="newday-btn" onclick="confirmNewDay()">Add day</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Export to Google Sheets</h2>
+      <button class="modal-close" onclick="closeModal('export-modal')">×</button>
+    </div>
+    <div class="modal-body" id="export-body"></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('export-modal')">Close</button>
+      <button class="primary" onclick="exportCSV()">Download CSV</button>
+      <button class="primary" onclick="openGoogleSheets()">Open Google Sheets ↗</button>
+    </div>
+  </div>
+</div>
+
+<!-- Summary modal -->
+<div class="modal-overlay" id="summary-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Monthly hours summary</h2>
+      <button class="modal-close" onclick="closeModal('summary-modal')">×</button>
+    </div>
+    <div class="modal-body" id="summary-body"></div>
+    <div class="modal-footer">
+      <button onclick="closeModal('summary-modal')">Close</button>
+      <button class="primary" onclick="exportSummaryCSV()">Download summary CSV</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'atc_log_v5';
+let rows = [];
+let nextId = 1;
+
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function nowUTC() {
+  const d = new Date();
+  return pad(d.getUTCHours()) + pad(d.getUTCMinutes());
+}
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+}
+
+function nextDayStr(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1, d+1));
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth()+1)}-${pad(dt.getUTCDate())}`;
+}
+
+function formatDateBanner(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1, d));
+  return dt.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).toUpperCase();
+}
+
+function timeToMins(t) {
+  if (!t || t.length < 4) return null;
+  const h = parseInt(t.slice(0,2));
+  const m = parseInt(t.slice(2,4));
+  if (isNaN(h) || isNaN(m)) return null;
+  return h*60 + m;
+}
+
+function validateTime(val) {
+  if (!val) return true;
+  if (!/^\d{4}$/.test(val)) return false;
+  const h = parseInt(val.slice(0,2));
+  const m = parseInt(val.slice(2,4));
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+}
+
+// Infer date for a row based on previous row's date and time comparison
+// Safe to call with idx = rows.length (row not yet pushed)
+function inferDateForRow(idx) {
+  if (idx === 0) return (rows[0] && rows[0].date) ? rows[0].date : todayStr();
+  const prev = rows[idx-1];
+  if (!prev) return todayStr();
+  const cur = rows[idx]; // may be undefined if called before push
+  // If this row is explicitly marked as a new day, keep its stored date
+  if (cur && cur.newDay) return cur.date;
+  const prevMins = timeToMins(prev.time);
+  const curMins = cur ? timeToMins(cur.time) : null;
+  if (prevMins !== null && curMins !== null && curMins < prevMins) {
+    return nextDayStr(prev.date);
+  }
+  return prev.date;
+}
+
+function recalcDates() {
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i].newDay) {
+      rows[i].date = inferDateForRow(i);
+    }
+  }
+}
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ rows, nextId }));
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      rows = d.rows || [];
+      nextId = d.nextId || (rows.length + 1);
+    }
+  } catch(e) {}
+}
+
+// Get the TOW initials from the previous row to pre-fill HOW
+function getPrevTOW() {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].tow) return rows[i].tow;
+  }
+  return '';
+}
+
+function addRow(opts) {
+  opts = opts || {};
+  const id = nextId++;
+  const prevTOW = opts.how !== undefined ? opts.how : getPrevTOW();
+  const date = opts.date || (rows.length ? inferDateForRow(rows.length) : todayStr());
+  rows.push({
+    id,
+    time: opts.time || '',
+    how: opts.skipHow ? '' : (opts.how !== undefined ? opts.how : prevTOW),
+    tow: opts.tow || '',
+    date,
+    newDay: opts.newDay || false,
+    towOnly: opts.towOnly || false
+  });
+  save();
+  render();
+  const idx = rows.length - 1;
+  // All rows start at time — for towOnly rows Tab/Enter skips HOW to go to TOW
+  focusCell(idx, 'time');
+  updateStats();
+}
+
+function addNewDay() {
+  let newDate = todayStr();
+  if (rows.length > 0) {
+    const lastDate = rows[rows.length - 1].date || todayStr();
+    newDate = nextDayStr(lastDate);
+  }
+  // Show date picker pre-filled with computed next day
+  document.getElementById('newday-date-input').value = newDate;
+  document.getElementById('newday-modal').classList.add('open');
+  setTimeout(() => document.getElementById('newday-date-input').focus(), 50);
+}
+
+function confirmNewDay() {
+  const val = document.getElementById('newday-date-input').value;
+  if (!val) return;
+  closeModal('newday-modal');
+  addRow({ towOnly: true, newDay: true, date: val, skipHow: true });
+}
+
+function deleteRow(idx) {
+  rows.splice(idx, 1);
+  recalcDates();
+  save();
+  render();
+  updateStats();
+}
+
+function focusCell(rowIdx, field) {
+  setTimeout(() => {
+    const inp = document.querySelector(`[data-row="${rowIdx}"][data-field="${field}"]`);
+    if (inp && !inp.disabled) { inp.focus(); inp.select(); }
+  }, 20);
+}
+
+function updateField(idx, field, value) {
+  rows[idx][field] = field === 'time' ? value : value.toUpperCase();
+  save();
+  updateStats();
+}
+
+function render() {
+  const tbody = document.getElementById('log-body');
+  tbody.innerHTML = '';
+
+  if (rows.length === 0) {
+    const empty = document.createElement('tr');
+    empty.innerHTML = `<td colspan="5" style="text-align:center;padding:48px 16px;color:var(--text-dim);font-size:13px;letter-spacing:.04em">Press <b style="color:var(--warning)">+ new day</b> to start logging</td>`;
+    tbody.appendChild(empty);
+    updateStats();
+    return;
+  }
+
+  let lastDate = null;
+
+  rows.forEach((row, idx) => {
+    const date = row.date || todayStr();
+
+    // Insert date banner when date changes (but not before the very first row unless it's a forced newDay)
+    if (date !== lastDate) {
+      if (lastDate !== null || row.newDay) {
+        const divRow = document.createElement('tr');
+        divRow.className = 'date-divider';
+        divRow.innerHTML = `<td colspan="5">— ${formatDateBanner(date)} —</td>`;
+        tbody.appendChild(divRow);
+      }
+      lastDate = date;
+    }
+
+    const tr = document.createElement('tr');
+    tr.className = 'data-row';
+    tr.dataset.idx = idx;
+
+    const timeValid = validateTime(row.time);
+    const isTowOnly = row.towOnly;
+
+    // All rows have a time input — new-day rows just start focused on TOW after time
+    tr.innerHTML = `
+      <td class="row-num">${idx+1}</td>
+      <td>
+        <input class="cell-input time-input${!timeValid && row.time ? ' error' : ''}"
+          data-row="${idx}" data-field="time"
+          value="${row.time}"
+          placeholder="HHMM"
+          maxlength="4"
+          inputmode="numeric"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </td>
+      <td>
+        <input class="cell-input initials-input how-input"
+          data-row="${idx}" data-field="how"
+          value="${row.how}"
+          placeholder="${isTowOnly ? '—' : 'Initials'}"
+          maxlength="4"
+          autocomplete="off"
+          spellcheck="false"
+          ${isTowOnly ? 'disabled style="opacity:0.25;pointer-events:none"' : ''}
+        />
+      </td>
+      <td>
+        <input class="cell-input initials-input tow-input"
+          data-row="${idx}" data-field="tow"
+          value="${row.tow}"
+          placeholder="Initials"
+          maxlength="4"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        ${isTowOnly ? `<span class="newday-tag">DAY START</span>` : ''}
+      </td>
+      <td>
+        <button class="delete-btn" onclick="deleteRow(${idx})" title="Delete row">✕</button>
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+
+  attachInputListeners();
+  markEmptyFields();
+  markLongShifts();
+  updateSubtitle();
+  updateStats();
+}
+
+function markEmptyFields() {
+  // Build set of row indices whose TOW should be exempt from red:
+  // - the last row of the day when the next row is a new-day (day-start) row
+  // - the very last row overall (nobody to hand over to yet)
+  const exemptTOW = new Set();
+  rows.forEach((row, idx) => {
+    const isLast = idx === rows.length - 1;
+    const nextIsNewDay = !isLast && rows[idx + 1] && rows[idx + 1].newDay;
+    if (isLast || nextIsNewDay) exemptTOW.add(idx);
+  });
+
+  document.querySelectorAll('.cell-input').forEach(inp => {
+    if (inp.disabled) return;
+    const idx = parseInt(inp.dataset.row);
+    const field = inp.dataset.field;
+    // Exempt TOW on end-of-day rows
+    if (field === 'tow' && exemptTOW.has(idx)) {
+      inp.classList.remove('empty-field');
+      return;
+    }
+    if (!inp.value.trim()) inp.classList.add('empty-field');
+    else inp.classList.remove('empty-field');
+  });
+}
+
+// Build a map of rowIndex -> minutes on shift for the TOW controller at that row.
+// The controller TOW'd in at some earlier row; we find when and diff with this row's time.
+function markLongShifts() {
+  // For each row, the HOW controller sat down when they appeared as TOW on an earlier row.
+  // If that gap is >= 120 mins, highlight the HOW input on this row (and only HOW).
+  // towStart tracks: initials -> time they last appeared as TOW
+  const towStart = {}; // initials -> time string
+  // longHOW[idx] = true if the HOW on that row has been in seat >= 120 mins
+  const longHOW = {};
+
+  rows.forEach((row, idx) => {
+    if (row.how && row.time && validateTime(row.time)) {
+      const startTime = towStart[row.how];
+      if (startTime) {
+        const startMins = timeToMins(startTime);
+        let endMins = timeToMins(row.time);
+        if (startMins !== null && endMins !== null) {
+          if (endMins < startMins) endMins += 24 * 60;
+          if (endMins - startMins >= 120) longHOW[idx] = true;
+        }
+      }
+    }
+    // Record when this controller took over
+    if (row.tow && row.time && validateTime(row.time)) {
+      towStart[row.tow] = row.time;
+    }
+  });
+
+  document.querySelectorAll('.cell-input.initials-input').forEach(inp => {
+    const idx = parseInt(inp.dataset.row);
+    const field = inp.dataset.field;
+    // Only highlight HOW, and only when flagged
+    if (field === 'how' && longHOW[idx]) {
+      inp.classList.add('long-shift');
+    } else {
+      inp.classList.remove('long-shift');
+    }
+  });
+}
+
+function attachInputListeners() {
+  document.querySelectorAll('.cell-input').forEach(inp => {
+    const idx = parseInt(inp.dataset.row);
+    const field = inp.dataset.field;
+    const row = rows[idx];
+
+    inp.addEventListener('input', e => {
+      let val = e.target.value;
+      if (field === 'time') {
+        // Only digits, do NOT re-render — just update the model silently
+        val = val.replace(/\D/g, '');
+        if (val !== e.target.value) e.target.value = val;
+        updateField(idx, field, val);
+        // Empty highlight
+        if (val) inp.classList.remove('empty-field'); else inp.classList.add('empty-field');
+        // Recompute long-shift highlights whenever time changes
+        markLongShifts();
+        // Validate indicator only — no re-render
+        if (val.length === 4) {
+          if (validateTime(val)) {
+            inp.classList.remove('error');
+            // Auto-advance: skip HOW if it's pre-filled or this is a day-start row
+            const skipHOW = (row && row.towOnly) || (row && row.how && row.how.length > 0);
+            focusCell(idx, skipHOW ? 'tow' : 'how');
+          } else {
+            inp.classList.add('error');
+          }
+        } else {
+          inp.classList.remove('error');
+        }
+      } else {
+        val = val.replace(/[^a-zA-Z]/g, '').toUpperCase();
+        if (val !== e.target.value) e.target.value = val;
+        updateField(idx, field, val);
+        if (val) inp.classList.remove('empty-field'); else inp.classList.add('empty-field');
+      }
+    });
+
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        if (field === 'time') {
+          const skipH = (row && row.towOnly) || (row && row.how && row.how.length > 0);
+          focusCell(idx, skipH ? 'tow' : 'how');
+        } else if (field === 'how') {
+          focusCell(idx, 'tow');
+        } else if (field === 'tow') {
+          // Advance: next row's time, or create new row
+          if (idx === rows.length - 1) {
+            // Create next row with this TOW pre-filled as HOW
+            const towVal = rows[idx].tow;
+            addRowAfterTOW(towVal);
+          } else {
+            focusCell(idx + 1, rows[idx+1].towOnly ? 'tow' : 'time');
+          }
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (field === 'tow') {
+          if (idx === rows.length - 1) {
+            const towVal = rows[idx].tow;
+            addRowAfterTOW(towVal);
+          } else {
+            focusCell(idx + 1, rows[idx+1].towOnly ? 'tow' : 'time');
+          }
+        } else if (field === 'how') {
+          focusCell(idx, 'tow');
+        } else if (field === 'time') {
+          const skipH2 = (row && row.towOnly) || (row && row.how && row.how.length > 0);
+          focusCell(idx, skipH2 ? 'tow' : 'how');
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (idx < rows.length - 1) focusCell(idx+1, field === 'time' && rows[idx+1].towOnly ? 'tow' : field);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (idx > 0) focusCell(idx-1, field);
+      }
+    });
+
+    // When TOW field changes, if next row exists and is empty in HOW, update it
+    if (field === 'tow') {
+      inp.addEventListener('change', e => {
+        const val = e.target.value.toUpperCase();
+        if (val && idx + 1 < rows.length && !rows[idx+1].how && !rows[idx+1].towOnly) {
+          rows[idx+1].how = val;
+          save();
+          render();
+        }
+      });
+    }
+  });
+}
+
+function addRowAfterTOW(towVal) {
+  // Called when Tab/Enter pressed in TOW — create a new normal row
+  // HOW is pre-filled with the TOW just entered
+  const id = nextId++;
+  const date = inferDateForRow(rows.length);
+  rows.push({ id, time: '', how: towVal || '', tow: '', date, newDay: false, towOnly: false });
+  save();
+  render();
+  focusCell(rows.length - 1, 'time');
+  updateStats();
+}
+
+function updateSubtitle() {
+  const el = document.getElementById('airport-subtitle');
+  const d = new Date();
+  const utc = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+  el.textContent = `${todayStr()} · ${utc} · OPS 0800–2300`;
+}
+
+function updateStats() {
+  const today = todayStr();
+  document.getElementById('stat-today').textContent = rows.filter(r => r.date === today).length;
+  document.getElementById('stat-total').textContent = rows.length;
+  const controllers = new Set();
+  rows.forEach(r => { if (r.how) controllers.add(r.how); if (r.tow) controllers.add(r.tow); });
+  document.getElementById('stat-controllers').textContent = controllers.size > 0 ? [...controllers].join(', ') : '—';
+  const last = rows.filter(r => r.time).pop();
+  document.getElementById('stat-last').textContent = last ? last.time.slice(0,2)+':'+last.time.slice(2) : '—';
+}
+
+function calcSummary() {
+  const summary = {};
+  rows.forEach((row, idx) => {
+    const nextRow = rows[idx+1];
+    if (!row.tow || !row.time || !nextRow || !nextRow.time) return;
+    const startMins = timeToMins(row.time);
+    let endMins = timeToMins(nextRow.time);
+    if (endMins === null || startMins === null) return;
+    if (endMins <= startMins) endMins += 24*60;
+    const duration = endMins - startMins;
+    const monthKey = (row.date || '?').slice(0,7);
+    const controller = row.tow;
+    if (!summary[monthKey]) summary[monthKey] = {};
+    if (!summary[monthKey][controller]) summary[monthKey][controller] = 0;
+    summary[monthKey][controller] += duration;
+  });
+  return summary;
+}
+
+function minsToHHMM(mins) {
+  return `${Math.floor(mins/60)}h ${pad(mins%60)}m`;
+}
+
+function openSummary() {
+  const summary = calcSummary();
+  const months = Object.keys(summary).sort();
+  let html = months.length === 0
+    ? '<p style="color:var(--text-muted);font-size:13px">No complete entries to summarise yet.</p>'
+    : '';
+  months.forEach(month => {
+    html += `<div style="margin-bottom:20px"><div style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--warning);margin-bottom:8px">${month}</div>
+      <table class="export-table"><thead><tr><th>Controller</th><th>Total time</th><th>Shifts</th></tr></thead><tbody>`;
+    Object.entries(summary[month]).sort((a,b)=>b[1]-a[1]).forEach(([ctrl, mins]) => {
+      const shifts = rows.filter(r => r.date && r.date.startsWith(month) && r.tow === ctrl).length;
+      html += `<tr><td>${ctrl}</td><td>${minsToHHMM(mins)}</td><td>${shifts}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  });
+  document.getElementById('summary-body').innerHTML = html;
+  document.getElementById('summary-modal').classList.add('open');
+}
+
+function exportSummaryCSV() {
+  const summary = calcSummary();
+  let csv = 'Month,Controller,Hours,Minutes,Total (h:mm)\n';
+  Object.keys(summary).sort().forEach(month => {
+    Object.entries(summary[month]).sort().forEach(([ctrl, mins]) => {
+      const h = Math.floor(mins/60); const m = mins%60;
+      csv += `${month},${ctrl},${h},${m},${h}:${pad(m)}\n`;
+    });
+  });
+  downloadCSV(csv, 'atc_monthly_summary.csv');
+}
+
+// Build per-controller shift records: { ctrl -> [{date, start, end, durMins}] }
+function buildControllerShifts() {
+  const shifts = {}; // ctrl -> array of {date, start, end, durMins}
+  // Track when each controller last took over
+  const towStart = {}; // ctrl -> {time, date}
+  rows.forEach((row, idx) => {
+    // When a hand-over happens (row.how leaves, row.tow takes over)
+    // The HOW controller's shift ends at row.time; their shift started when they TOW'd
+    if (row.how && row.time && validateTime(row.time)) {
+      const ctrl = row.how;
+      const startEntry = towStart[ctrl];
+      if (startEntry) {
+        const startMins = timeToMins(startEntry.time);
+        let endMins = timeToMins(row.time);
+        if (startMins !== null && endMins !== null) {
+          if (endMins < startMins) endMins += 24 * 60;
+          if (!shifts[ctrl]) shifts[ctrl] = [];
+          shifts[ctrl].push({
+            date: startEntry.date || row.date,
+            start: startEntry.time,
+            end: row.time,
+            durMins: endMins - startMins
+          });
+        }
+      }
+    }
+    // Record when this controller took over
+    if (row.tow && row.time && validateTime(row.time)) {
+      towStart[row.tow] = { time: row.time, date: row.date };
+    }
+  });
+  return shifts;
+}
+
+function fmtTime(t) { return t ? t.slice(0,2)+':'+t.slice(2) : ''; }
+function fmtDur(mins) { return mins != null ? Math.floor(mins/60)+'h '+pad(mins%60)+'m' : ''; }
+
+function openExport() {
+  let html = '<p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Download CSV then import into Google Sheets via <b>File → Import</b>.</p>';
+  if (rows.length === 0) { html = '<p style="color:var(--text-muted);font-size:13px">No entries to export.</p>'; }
+  else {
+    const shifts = buildControllerShifts();
+    const controllers = Object.keys(shifts).sort();
+    if (controllers.length === 0) {
+      html += '<p style="color:var(--text-muted);font-size:13px">No completed shifts yet (need at least two rows with times).</p>';
+    } else {
+      // Preview: show one table per controller
+      controllers.forEach(ctrl => {
+        const recs = shifts[ctrl];
+        html += `<div style="margin-bottom:18px">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">${ctrl}</div>
+          <table class="export-table"><thead><tr><th>Date</th><th>Start</th><th>End</th><th>Duration</th></tr></thead><tbody>`;
+        recs.forEach(r => {
+          const warn = r.durMins >= 120 ? ' style="color:#f0c040"' : '';
+          html += `<tr><td>${r.date}</td><td>${fmtTime(r.start)}</td><td>${fmtTime(r.end)}</td><td${warn}>${fmtDur(r.durMins)}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+      });
+    }
+  }
+  document.getElementById('export-body').innerHTML = html;
+  document.getElementById('export-modal').classList.add('open');
+}
+
+function exportCSV() {
+  const shifts = buildControllerShifts();
+  const controllers = Object.keys(shifts).sort();
+  if (controllers.length === 0) {
+    // Fallback: export raw log
+    let csv = 'Date,UTC Time,HOW,TOW\n';
+    rows.forEach(r => { csv += `${r.date||''},${fmtTime(r.time)},${r.how||''},${r.tow||''}\n`; });
+    downloadCSV(csv, 'atc_hours_log.csv');
+    return;
+  }
+  // Wide format: Date | CT1 Start | CT1 End | CT1 Duration | CT2 Start | ...
+  const header1 = ['Date', ...controllers.flatMap(c => [c, '', ''])].join(',');
+  const header2 = ['', ...controllers.flatMap(() => ['Start','End','Duration'])].join(',');
+  // Find max rows across all controllers
+  const maxRows = Math.max(...controllers.map(c => shifts[c].length));
+  const dataRows = [];
+  for (let i = 0; i < maxRows; i++) {
+    // Use the date from the first controller that has a record at this index
+    const date = controllers.map(c => shifts[c][i]?.date).find(Boolean) || '';
+    const cells = [date, ...controllers.flatMap(c => {
+      const r = shifts[c][i];
+      return r ? [fmtTime(r.start), fmtTime(r.end), fmtDur(r.durMins)] : ['','',''];
+    })];
+    dataRows.push(cells.join(','));
+  }
+  const csv = [header1, header2, ...dataRows].join('\n');
+  downloadCSV(csv, 'atc_hours_log.csv');
+}
+
+function downloadCSV(csv, filename) {
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function openGoogleSheets() {
+  exportCSV();
+  setTimeout(() => window.open('https://docs.google.com/spreadsheets/create', '_blank'), 400);
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function confirmClear() {
+  if (confirm('Clear all log entries? This cannot be undone.')) {
+    rows = []; nextId = 1; save(); render(); updateStats();
+  }
+}
+
+setInterval(updateSubtitle, 15000);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+});
+
+load();
+render();
+updateStats();
+updateSubtitle();
+</script>
+</body>
+</html>
