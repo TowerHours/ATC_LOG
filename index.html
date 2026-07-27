@@ -62,14 +62,14 @@
   .ext-group { display: flex; flex-direction: column; gap: 2px; }
   .ext-group.right { align-items: flex-end; }
   .ext-label { font-size: 9px; letter-spacing: .05em; color: var(--text-dim); text-transform: uppercase; font-weight: 500; }
-  .ext-input { width: 62px; background: var(--surface); border: 1px solid var(--border-bright); color: #f0c040; font-family: var(--mono); font-size: 13px; padding: 3px 6px; border-radius: 4px; outline: none; text-align: center; letter-spacing: .05em; }
+  .ext-input { width: 62px; background: var(--surface); border: 1px solid var(--border-bright); color: #f0c040; font-family: var(--mono); font-size: 14px; font-weight: 600; padding: 3px 6px; border-radius: 4px; outline: none; text-align: center; letter-spacing: .05em; }
   .ext-input:focus { border-color: var(--warning); }
   .ext-input.error { border-color: var(--danger); color: var(--danger); }
   .ext-date { flex: 1; text-align: center; }
   input.cell-input { background: transparent; border: 1px solid transparent; color: var(--text); font-family: var(--mono); font-size: 14px; padding: 5px 8px; border-radius: 4px; width: 100%; outline: none; transition: border-color 0.15s, background 0.15s; letter-spacing: 0.05em; }
   input.cell-input:hover { border-color: var(--border-bright); }
   input.cell-input:focus { border-color: var(--accent); background: var(--surface2); }
-  input.cell-input.time-input { font-size: 15px; font-weight: 600; color: var(--accent); }
+  input.cell-input.time-input { font-size: 14px; font-weight: 600; color: var(--accent); }
   input.cell-input.initials-input { text-transform: uppercase; letter-spacing: 0.12em; }
   input.cell-input.how-input { color: #3fb950; }
   input.cell-input.tow-input { color: #e3b341; }
@@ -77,7 +77,7 @@
   input.cell-input:disabled { opacity: 0.3; cursor: default; }
   input.cell-input.empty-field { border-color: var(--danger) !important; background: rgba(248,81,73,0.07); }
   input.cell-input.long-shift { border-color: #b8860b !important; background: rgba(210,153,34,0.13); color: #f0c040 !important; }
-  input.cell-input.ojti-input { font-size: 13px; color: #c08af0; }
+  input.cell-input.ojti-input { font-size: 14px; font-weight: 600; color: #c08af0; }
   input.cell-input.over-shift { border-color: var(--danger) !important; background: rgba(248,81,73,0.16); color: #ff8a80 !important; }
   input.cell-input.ojti-input::placeholder { color: var(--text-dim); }
   .ojti-head { color: #c08af0 !important; }
@@ -111,9 +111,12 @@
   .export-table th, .export-table td { padding: 6px 10px; border: 1px solid var(--border); text-align: left; }
   .export-table th { background: var(--surface2); color: var(--text-muted); font-size: 11px; }
   .export-table tr:nth-child(even) td { background: var(--surface2); }
+  .report-table { font-size: 12px; table-layout: auto; }
+  .report-table th, .report-table td { white-space: nowrap; text-align: center; padding: 6px 12px; }
+  .report-table th:first-child, .report-table td:first-child { text-align: left; }
   .newday-tag { font-size: 10px; background: #2d2010; color: var(--warning); border: 1px solid var(--warning); border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
-  .open-tag { font-size: 10px; background: #12314f; color: #58a6ff; border: 1px solid #58a6ff; border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
-  .close-tag { font-size: 10px; background: #3a1414; color: #ff6b63; border: 1px solid var(--danger); border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
+  .open-tag { font-size: 10px; background: transparent; color: #58a6ff; border: 1px solid #58a6ff; border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
+  .close-tag { font-size: 10px; background: transparent; color: #ff6b63; border: 1px solid var(--danger); border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
   td:has(.newday-tag), td:has(.open-tag), td:has(.close-tag) { display: flex; align-items: center; }
   tr.radar-open-row { box-shadow: inset 3px 0 0 #58a6ff; }
   tr.radar-close-row { box-shadow: inset 3px 0 0 var(--danger); }
@@ -214,11 +217,11 @@
     </table>
   </div>
   <div class="add-row-area">
-    <button class="add-newday-btn" onclick="openRadar()" style="border-color:#58a6ff;color:#58a6ff">▶ Open</button>
-    <button class="add-newday-btn" onclick="closeRadar()" style="border-color:#f85149;color:#f85149">■ Close</button>
-    <button class="add-row-btn" onclick="addRow()">+ add handover</button>
-    <button class="add-newday-btn" onclick="insertRowBelow()" style="border-color:var(--accent);color:var(--accent)">+ insert below</button>
-    <button class="add-newday-btn" onclick="addNewDay()">+ new day</button>
+    <button class="add-newday-btn" onclick="openRadar()" style="border-color:#58a6ff;color:#58a6ff"><span style="font-size:11px;vertical-align:middle;margin-right:3px">▶</span>Open</button>
+    <button class="add-newday-btn" onclick="closeRadar()" style="border-color:#f85149;color:#f85149"><span style="font-size:11px;vertical-align:middle;margin-right:3px">■</span>Close</button>
+    <button class="add-row-btn" onclick="addRow()">+ Add Handover</button>
+    <button class="add-newday-btn" onclick="insertRowBelow()" style="border-color:var(--accent);color:var(--accent)">+ Insert Below</button>
+    <button class="add-newday-btn" onclick="addNewDay()">+ New Day</button>
   </div>
 </div>
 
@@ -284,7 +287,7 @@
 
 <!-- Monthly radar report modal -->
 <div class="modal-overlay" id="radar-report-modal">
-  <div class="modal" style="width:640px">
+  <div class="modal" style="width:820px;max-width:96vw">
     <div class="modal-header">
       <h2 id="report-title">Monthly report</h2>
       <button class="modal-close" onclick="closeModal('radar-report-modal')">×</button>
@@ -525,7 +528,7 @@ function render() {
 
   if (rows.length === 0) {
     const empty = document.createElement('tr');
-    empty.innerHTML = `<td colspan="7" style="text-align:center;padding:48px 16px;color:var(--text-dim);font-size:13px;letter-spacing:.04em">Press <b style="color:var(--warning)">+ new day</b> to start logging</td>`;
+    empty.innerHTML = `<td colspan="7" style="text-align:center;padding:48px 16px;color:var(--text-dim);font-size:13px;letter-spacing:.04em">Press <b style="color:var(--warning)">+ New Day</b> to start logging</td>`;
     tbody.appendChild(empty);
     updateStats();
     return;
@@ -1209,9 +1212,9 @@ function renderRadarReport() {
     html = '<p style="color:var(--text-muted);font-size:13px">No radar open/close events logged for this month.</p>';
   } else {
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    html += `<table class="export-table" style="font-size:11px"><thead><tr>
+    html += `<table class="export-table report-table"><thead><tr>
       <th>Date</th><th>Day</th><th>Open</th><th>Close</th>
-      <th title="Early extension">Early</th><th title="Late extension">Late</th>
+      <th title="Early extension (UTC)">Early ext (z)</th><th title="Late extension (UTC)">Late ext (z)</th>
       <th title="Total time available to be open">Available</th>
       <th style="color:#3fb950">Total open</th><th style="color:#ff8a80">Total closed</th></tr></thead><tbody>`;
     days.forEach(d => {
@@ -1234,7 +1237,7 @@ function renderRadarReport() {
       <td style="font-weight:600;color:#3fb950">${fmtMins(totOpen)}</td>
       <td style="font-weight:600;color:#ff8a80">${fmtMins(totClosed)}</td></tr></tfoot></table>`;
     html += `<p style="font-size:11px;color:var(--text-dim);margin-top:10px">* reduced-hours day (weekend / bank holiday), usual <b>0830–1800 local</b>. Weekdays usual <b>0800–2100 local</b>. Logged open/close and extension times are <b>UTC (z)</b>; normal hours are converted from local (BST/GMT) automatically for the date.<br>
-      <b>Early / Late</b> = extension durations from the date-line boxes. <b>Available</b> = usual hours + extensions. <b>Total open</b> = logged open time. <b>Total closed</b> = available − open.</p>`;
+      <b>Early / Late ext</b> = extension amounts from the date-line boxes (entered in UTC/z). <b>Available</b> = usual hours + extensions. <b>Total open</b> = logged open time. <b>Total closed</b> = available − open.</p>`;
   }
   document.getElementById('radar-report-body').innerHTML = html;
 }
@@ -1498,7 +1501,9 @@ function showMonthBanner() {
 // ── Boot ──────────────────────────────────────────────────────────────────
 updateSubtitle(); // clock ticks regardless of tool
 if (CLOUD_ENABLED) {
-  supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Normalise the URL to just the origin, so a trailing slash or /rest/v1 path can't break auth
+  const cleanUrl = (() => { try { return new URL(SUPABASE_URL.trim()).origin; } catch(e){ return SUPABASE_URL.trim().replace(/\/+$/,''); } })();
+  supa = window.supabase.createClient(cleanUrl, SUPABASE_ANON_KEY.trim());
   window.addEventListener('offline', handleConnectionLoss);
   window.addEventListener('beforeunload', () => { if (currentTool && cloudUser) cloudSave(); });
   supa.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') location.reload(); });
