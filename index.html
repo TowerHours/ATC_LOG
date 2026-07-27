@@ -558,7 +558,7 @@ function render() {
               value="${ext.start || ''}" placeholder="—" maxlength="4" inputmode="numeric" autocomplete="off" spellcheck="false" />
           </div>
           <div class="ext-date">— ${formatDateBanner(date)} —
-            <label class="bh-check" title="Tick if this day is a bank holiday (uses 0830–1800 hours)">
+            <label class="bh-check" title="Tick if this day is a bank holiday (uses 0800–1800 hours)">
               <input type="checkbox" data-date="${date}" class="bh-input" ${isBankHoliday(date) ? 'checked' : ''} ${isWeekend(date) ? 'disabled' : ''} />
               Bank hol${isWeekend(date) ? ' (wknd)' : ''}
             </label>
@@ -953,7 +953,7 @@ function updateSubtitle() {
   const el = document.getElementById('airport-subtitle');
   const d = new Date();
   const utc = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
-  el.textContent = `${todayStr()} · ${utc} · USUAL 0700–2100 LOCAL · WKND/BH 0830–1800 LOCAL · LOG IN UTC(z)`;
+  el.textContent = `${todayStr()} · ${utc} · USUAL 0700–2100 LOCAL · WKND/BH 0800–1800 LOCAL · LOG IN UTC(z)`;
 }
 
 function updateStats() {
@@ -1117,7 +1117,7 @@ function isBankHoliday(dateStr) {
   return BANK_HOLIDAYS.has(dateStr);
 }
 function isReducedDay(dateStr) {
-  // weekend or bank holiday => reduced hours (0830–1800)
+  // weekend or bank holiday => reduced hours (0800–1800)
   return isWeekend(dateStr) || isBankHoliday(dateStr);
 }
 
@@ -1135,12 +1135,12 @@ function londonOffsetMinutes(dateStr) {
   return Math.round((asLocalWallClockUTC - inst.getTime()) / 60000);
 }
 
-// Normal operating hours are LOCAL: weekdays 0700–2100, weekends/bank holidays 0830–1800.
+// Normal operating hours are LOCAL: weekdays 0700–2100, weekends/bank holidays 0800–1800.
 // Logged open/close and extension times are UTC, so we return the normal open/close in UTC too.
 function usualHoursFor(dateStr) {
   const off = londonOffsetMinutes(dateStr); // local = UTC + off
   let localOpen, localClose;
-  if (isReducedDay(dateStr)) { localOpen = 8*60+30; localClose = 18*60; }  // 0830–1800 local
+  if (isReducedDay(dateStr)) { localOpen = 8*60; localClose = 18*60; }     // 0800–1800 local
   else { localOpen = 7*60; localClose = 21*60; }                            // 0700–2100 local
   // UTC = local - offset. Duration is offset-independent.
   return { openMins: localOpen - off, closeMins: localClose - off, totalMins: localClose - localOpen };
@@ -1262,7 +1262,7 @@ function renderRadarReport() {
       <td style="font-weight:600;color:var(--accent)">${fmtMins(totAvailable)}</td>
       <td style="font-weight:600;color:#3fb950">${fmtMins(totOpen)}</td>
       <td style="font-weight:600;color:#ff8a80">${fmtMins(totClosed)}</td></tr></tfoot></table>`;
-    html += `<p style="font-size:11px;color:var(--text-dim);margin-top:10px">* reduced-hours day (weekend / bank holiday), usual <b>0830–1800 local</b>. Weekdays usual <b>0700–2100 local</b>. Logged open/close and extension times are <b>UTC (z)</b>; normal hours are converted from local (BST/GMT) automatically for the date.<br>
+    html += `<p style="font-size:11px;color:var(--text-dim);margin-top:10px">* reduced-hours day (weekend / bank holiday), usual <b>0800–1800 local</b>. Weekdays usual <b>0700–2100 local</b>. Logged open/close and extension times are <b>UTC (z)</b>; normal hours are converted from local (BST/GMT) automatically for the date.<br>
       <b>Early / Late ext</b> = extension amounts from the date-line boxes (entered in UTC/z). <b>Available</b> = usual hours + extensions. <b>Total open</b> = logged open time. <b>Total closed</b> = available − open.</p>`;
   }
   document.getElementById('radar-report-body').innerHTML = html;
