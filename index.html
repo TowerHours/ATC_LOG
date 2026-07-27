@@ -66,6 +66,9 @@
   .ext-input:focus { border-color: var(--warning); }
   .ext-input.error { border-color: var(--danger); color: var(--danger); }
   .ext-date { flex: 1; text-align: center; }
+  .bh-check { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; font-size: 10px; letter-spacing: .04em; color: var(--text-muted); text-transform: none; font-weight: 500; cursor: pointer; vertical-align: middle; }
+  .bh-check input { accent-color: var(--warning); cursor: pointer; margin: 0; }
+  .bh-check input:disabled { cursor: default; }
   input.cell-input { background: transparent; border: 1px solid transparent; color: var(--text); font-family: var(--mono); font-size: 14px; padding: 5px 8px; border-radius: 4px; width: 100%; outline: none; transition: border-color 0.15s, background 0.15s; letter-spacing: 0.05em; }
   input.cell-input:hover { border-color: var(--border-bright); }
   input.cell-input:focus { border-color: var(--accent); background: var(--surface2); }
@@ -317,6 +320,7 @@ let rows = [];
 let nextId = 1;
 let selectedRowIndex = -1;
 let dayExtensions = {}; // 'YYYY-MM-DD' -> { start:'HHMM', end:'HHMM' }
+let bankHolidays = {};  // 'YYYY-MM-DD' -> true/false (manual bank-holiday tick)
 
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -387,7 +391,7 @@ function recalcDates() {
 function save() {
   if (!currentTool) return;
   lastEditTs = Date.now();
-  localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, _savedAt: Date.now() }));
+  localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, bankHolidays, _savedAt: Date.now() }));
   scheduleCloudSave();
 }
 
@@ -407,6 +411,7 @@ function load() {
       rows = d.rows || [];
       nextId = d.nextId || (rows.length + 1);
       dayExtensions = d.dayExtensions || {};
+      bankHolidays = d.bankHolidays || {};
     }
   } catch(e) {}
 }
@@ -552,7 +557,12 @@ function render() {
             <input class="ext-input" data-date="${date}" data-ext="start"
               value="${ext.start || ''}" placeholder="—" maxlength="4" inputmode="numeric" autocomplete="off" spellcheck="false" />
           </div>
-          <div class="ext-date">— ${formatDateBanner(date)} —</div>
+          <div class="ext-date">— ${formatDateBanner(date)} —
+            <label class="bh-check" title="Tick if this day is a bank holiday (uses 0830–1800 hours)">
+              <input type="checkbox" data-date="${date}" class="bh-input" ${isBankHoliday(date) ? 'checked' : ''} ${isWeekend(date) ? 'disabled' : ''} />
+              Bank hol${isWeekend(date) ? ' (wknd)' : ''}
+            </label>
+          </div>
           <div class="ext-group right">
             <span class="ext-label">Late ext (end)</span>
             <input class="ext-input" data-date="${date}" data-ext="end"
@@ -801,6 +811,14 @@ function attachExtListeners() {
       save();
     });
   });
+  document.querySelectorAll('.bh-input').forEach(box => {
+    box.addEventListener('change', e => {
+      const date = box.dataset.date;
+      bankHolidays[date] = e.target.checked;
+      save();
+      render(); // refresh so the * marker, hours and report reflect the change
+    });
+  });
 }
 
 function attachInputListeners() {
@@ -935,7 +953,7 @@ function updateSubtitle() {
   const el = document.getElementById('airport-subtitle');
   const d = new Date();
   const utc = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
-  el.textContent = `${todayStr()} · ${utc} · USUAL 0800–2100 LOCAL · WKND/BH 0830–1800 LOCAL · LOG IN UTC(z)`;
+  el.textContent = `${todayStr()} · ${utc} · USUAL 0700–2100 LOCAL · WKND/BH 0830–1800 LOCAL · LOG IN UTC(z)`;
 }
 
 function updateStats() {
@@ -1088,12 +1106,19 @@ const BANK_HOLIDAYS = new Set([
   '2026-01-01','2026-04-03','2026-04-06','2026-05-04','2026-05-25','2026-08-31','2026-12-25','2026-12-28'
 ]);
 
-function isReducedDay(dateStr) {
-  // weekend or bank holiday => reduced hours (0830–1800)
+function isWeekend(dateStr) {
   const [y,m,d] = dateStr.split('-').map(Number);
   const dow = new Date(Date.UTC(y, m-1, d)).getUTCDay(); // 0 Sun .. 6 Sat
-  if (dow === 0 || dow === 6) return true;
+  return dow === 0 || dow === 6;
+}
+// A manual tick (true/false) overrides the built-in list; otherwise fall back to it.
+function isBankHoliday(dateStr) {
+  if (Object.prototype.hasOwnProperty.call(bankHolidays, dateStr)) return !!bankHolidays[dateStr];
   return BANK_HOLIDAYS.has(dateStr);
+}
+function isReducedDay(dateStr) {
+  // weekend or bank holiday => reduced hours (0830–1800)
+  return isWeekend(dateStr) || isBankHoliday(dateStr);
 }
 
 // Minutes UK local time is ahead of UTC on a given date: +60 during BST, 0 during GMT.
@@ -1110,13 +1135,13 @@ function londonOffsetMinutes(dateStr) {
   return Math.round((asLocalWallClockUTC - inst.getTime()) / 60000);
 }
 
-// Normal operating hours are LOCAL: weekdays 0800–2100, weekends/bank holidays 0830–1800.
+// Normal operating hours are LOCAL: weekdays 0700–2100, weekends/bank holidays 0830–1800.
 // Logged open/close and extension times are UTC, so we return the normal open/close in UTC too.
 function usualHoursFor(dateStr) {
   const off = londonOffsetMinutes(dateStr); // local = UTC + off
   let localOpen, localClose;
   if (isReducedDay(dateStr)) { localOpen = 8*60+30; localClose = 18*60; }  // 0830–1800 local
-  else { localOpen = 8*60; localClose = 21*60; }                            // 0800–2100 local
+  else { localOpen = 7*60; localClose = 21*60; }                            // 0700–2100 local
   // UTC = local - offset. Duration is offset-independent.
   return { openMins: localOpen - off, closeMins: localClose - off, totalMins: localClose - localOpen };
 }
@@ -1237,7 +1262,7 @@ function renderRadarReport() {
       <td style="font-weight:600;color:var(--accent)">${fmtMins(totAvailable)}</td>
       <td style="font-weight:600;color:#3fb950">${fmtMins(totOpen)}</td>
       <td style="font-weight:600;color:#ff8a80">${fmtMins(totClosed)}</td></tr></tfoot></table>`;
-    html += `<p style="font-size:11px;color:var(--text-dim);margin-top:10px">* reduced-hours day (weekend / bank holiday), usual <b>0830–1800 local</b>. Weekdays usual <b>0800–2100 local</b>. Logged open/close and extension times are <b>UTC (z)</b>; normal hours are converted from local (BST/GMT) automatically for the date.<br>
+    html += `<p style="font-size:11px;color:var(--text-dim);margin-top:10px">* reduced-hours day (weekend / bank holiday), usual <b>0830–1800 local</b>. Weekdays usual <b>0700–2100 local</b>. Logged open/close and extension times are <b>UTC (z)</b>; normal hours are converted from local (BST/GMT) automatically for the date.<br>
       <b>Early / Late ext</b> = extension amounts from the date-line boxes (entered in UTC/z). <b>Available</b> = usual hours + extensions. <b>Total open</b> = logged open time. <b>Total closed</b> = available − open.</p>`;
   }
   document.getElementById('radar-report-body').innerHTML = html;
@@ -1416,6 +1441,7 @@ async function cloudLoad() {
     rows = use.rows || [];
     nextId = use.nextId || (rows.length + 1);
     dayExtensions = use.dayExtensions || {};
+    bankHolidays = use.bankHolidays || {};
     if (localTime > cloudTime) cloudSave(); // push the newer local copy up
   } catch (e) {
     handleConnectionLoss();
@@ -1435,7 +1461,7 @@ async function cloudSave() {
   lastSelfSaveTs = Date.now();
   try {
     const { error } = await supa.from('shared_logs').upsert(
-      { tool: currentTool, data: { rows, nextId, dayExtensions },
+      { tool: currentTool, data: { rows, nextId, dayExtensions, bankHolidays },
         updated_at: new Date().toISOString(),
         updated_by: (cloudUser.email ? cloudUser.email.split('@')[0] : '') },
       { onConflict: 'tool' }
@@ -1468,6 +1494,7 @@ function onRemoteChange(rec) {
   rows = rec.data.rows || [];
   nextId = rec.data.nextId || (rows.length + 1);
   dayExtensions = rec.data.dayExtensions || {};
+  bankHolidays = rec.data.bankHolidays || {};
   render(); updateStats();
   setCloudStatus('UPDATED' + (rec.updated_by ? ' · ' + rec.updated_by : ''), 'var(--accent)');
 }
@@ -1476,7 +1503,7 @@ function handleConnectionLoss() {
   if (handlingLoss) return;
   handlingLoss = true;
   // Buffer everything locally first so nothing entered is lost
-  try { localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, _savedAt: Date.now() })); } catch(e){}
+  try { localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, bankHolidays, _savedAt: Date.now() })); } catch(e){}
   alert('Connection lost. The page will reload and ask you to sign in again.\n\nYour latest entries are saved on this device and will be restored automatically after you sign back in.');
   location.reload();
 }
@@ -1522,7 +1549,7 @@ async function backToSelection() {
   else { save(); }
   stopRealtime();
   document.getElementById('month-banner').style.display = 'none';
-  rows = []; dayExtensions = {}; selectedRowIndex = -1;
+  rows = []; dayExtensions = {}; bankHolidays = {}; selectedRowIndex = -1;
   showToolSelection();
 }
 
