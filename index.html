@@ -386,6 +386,7 @@ function recalcDates() {
 
 function save() {
   if (!currentTool) return;
+  lastEditTs = Date.now();
   localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, _savedAt: Date.now() }));
   scheduleCloudSave();
 }
@@ -1351,6 +1352,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const CLOUD_ENABLED     = !!(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
 
 let supa = null, cloudUser = null, cloudSaveTimer = null, handlingLoss = false;
+let realtimeChannel = null, lastEditTs = 0, lastSelfSaveTs = 0;
 
 function setCloudStatus(text, color) {
   const el = document.getElementById('cloud-status');
@@ -1383,7 +1385,9 @@ async function doLogin() {
 }
 
 async function doSignOut() {
-  try { await supa.auth.signOut(); } catch(e){}
+  try { if (currentTool) await cloudSave(); } catch(e){}
+  stopRealtime();
+  try { await supa.auth.signOut({ scope: 'local' }); } catch(e){}
   location.reload();
 }
 
@@ -1391,17 +1395,18 @@ async function onLoggedIn(user) {
   cloudUser = user;
   hideLogin();
   document.getElementById('signout-btn').style.display = 'inline-block';
-  setCloudStatus('SYNCED', 'var(--success)');
+  const who = user && user.email ? user.email.split('@')[0] : '';
+  setCloudStatus('SIGNED IN' + (who ? ' · ' + who : ''), 'var(--success)');
   showToolSelection();
 }
 
 async function cloudLoad() {
   try {
-    const { data, error } = await supa.from('logs')
-      .select('data,updated_at').eq('user_id', cloudUser.id).eq('tool', currentTool).maybeSingle();
+    // One SHARED row per tool — everyone signed in reads and writes the same log.
+    const { data, error } = await supa.from('shared_logs')
+      .select('data,updated_at,updated_by').eq('tool', currentTool).maybeSingle();
     if (error) throw error;
-    // Compare cloud copy with the local buffer; keep whichever is newer so unsaved
-    // entries from a dropped connection are never lost.
+    // Keep the local buffer only if it's newer (e.g. unsaved entries after a reconnect).
     let localObj = null;
     try { const r = localStorage.getItem(storageKeyFor(currentTool)); localObj = r ? JSON.parse(r) : null; } catch(e){}
     const cloudObj  = data ? data.data : null;
@@ -1425,18 +1430,46 @@ function scheduleCloudSave() {
 }
 
 async function cloudSave() {
-  if (!CLOUD_ENABLED || !cloudUser) return;
+  if (!CLOUD_ENABLED || !cloudUser || !currentTool) return;
   clearTimeout(cloudSaveTimer);
+  lastSelfSaveTs = Date.now();
   try {
-    const { error } = await supa.from('logs').upsert(
-      { user_id: cloudUser.id, tool: currentTool, data: { rows, nextId, dayExtensions }, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id,tool' }
+    const { error } = await supa.from('shared_logs').upsert(
+      { tool: currentTool, data: { rows, nextId, dayExtensions },
+        updated_at: new Date().toISOString(),
+        updated_by: (cloudUser.email ? cloudUser.email.split('@')[0] : '') },
+      { onConflict: 'tool' }
     );
     if (error) throw error;
     setCloudStatus('SYNCED', 'var(--success)');
   } catch (e) {
     handleConnectionLoss();
   }
+}
+
+// ── Live sync: apply edits made by other signed-in users ──────────────────
+function startRealtime() {
+  stopRealtime();
+  if (!CLOUD_ENABLED || !currentTool) return;
+  realtimeChannel = supa.channel('shared_logs_' + currentTool)
+    .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'shared_logs', filter: 'tool=eq.' + currentTool },
+        payload => onRemoteChange(payload.new))
+    .subscribe();
+}
+function stopRealtime() {
+  if (realtimeChannel) { try { supa.removeChannel(realtimeChannel); } catch(e){} realtimeChannel = null; }
+}
+function onRemoteChange(rec) {
+  if (!rec || !rec.data) return;
+  // Ignore the echo of our own save, and don't clobber someone mid-typing.
+  if (Date.now() - lastSelfSaveTs < 3000) return;
+  if (Date.now() - lastEditTs < 5000) { setCloudStatus('UPDATE PENDING…', 'var(--warning)'); return; }
+  rows = rec.data.rows || [];
+  nextId = rec.data.nextId || (rows.length + 1);
+  dayExtensions = rec.data.dayExtensions || {};
+  render(); updateStats();
+  setCloudStatus('UPDATED' + (rec.updated_by ? ' · ' + rec.updated_by : ''), 'var(--accent)');
 }
 
 function handleConnectionLoss() {
@@ -1475,6 +1508,7 @@ async function selectTool(tool) {
   handlingLoss = false;
   if (CLOUD_ENABLED && cloudUser) {
     await cloudLoad();
+    startRealtime();
   } else {
     load();
   }
@@ -1486,6 +1520,7 @@ async function backToSelection() {
   // Save current tool's work before leaving
   if (CLOUD_ENABLED && cloudUser) { await cloudSave(); }
   else { save(); }
+  stopRealtime();
   document.getElementById('month-banner').style.display = 'none';
   rows = []; dayExtensions = {}; selectedRowIndex = -1;
   showToolSelection();
