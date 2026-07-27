@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&display=swap" rel="stylesheet">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ATC Hours Log</title>
@@ -20,7 +24,7 @@
     --warning: #d29922;
     --danger: #f85149;
     --mono: 'Courier New', 'Consolas', monospace;
-    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --sans: 'Comfortaa', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; display: flex; flex-direction: column; }
@@ -48,11 +52,20 @@
   .row-num { color: var(--text-dim); font-family: var(--mono); font-size: 11px; padding: 0 8px 0 16px !important; width: 40px; text-align: right; }
   tr.data-row { border-bottom: 1px solid var(--border); transition: background 0.1s; }
   tr.data-row:hover { background: var(--surface); }
+  tr.data-row.selected { background: rgba(88,166,255,0.08); box-shadow: inset 3px 0 0 var(--accent); }
   tr.data-row td { padding: 3px 4px; vertical-align: middle; }
   tr.data-row td:first-child { padding-left: 8px; }
   tr.data-row td:last-child { padding-right: 8px; }
   .date-divider { background: var(--surface2); border-top: 2px solid var(--warning); border-bottom: 1px solid var(--border-bright); }
-  .date-divider td { padding: 8px 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--warning); text-align: center; }
+  .date-divider td { padding: 8px 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--warning); text-align: center; }
+  .ext-cell { display: flex; align-items: center; gap: 12px; }
+  .ext-group { display: flex; flex-direction: column; gap: 2px; }
+  .ext-group.right { align-items: flex-end; }
+  .ext-label { font-size: 9px; letter-spacing: .05em; color: var(--text-dim); text-transform: uppercase; font-weight: 500; }
+  .ext-input { width: 62px; background: var(--surface); border: 1px solid var(--border-bright); color: #f0c040; font-family: var(--mono); font-size: 13px; padding: 3px 6px; border-radius: 4px; outline: none; text-align: center; letter-spacing: .05em; }
+  .ext-input:focus { border-color: var(--warning); }
+  .ext-input.error { border-color: var(--danger); color: var(--danger); }
+  .ext-date { flex: 1; text-align: center; }
   input.cell-input { background: transparent; border: 1px solid transparent; color: var(--text); font-family: var(--mono); font-size: 14px; padding: 5px 8px; border-radius: 4px; width: 100%; outline: none; transition: border-color 0.15s, background 0.15s; letter-spacing: 0.05em; }
   input.cell-input:hover { border-color: var(--border-bright); }
   input.cell-input:focus { border-color: var(--accent); background: var(--surface2); }
@@ -64,6 +77,10 @@
   input.cell-input:disabled { opacity: 0.3; cursor: default; }
   input.cell-input.empty-field { border-color: var(--danger) !important; background: rgba(248,81,73,0.07); }
   input.cell-input.long-shift { border-color: #b8860b !important; background: rgba(210,153,34,0.13); color: #f0c040 !important; }
+  input.cell-input.ojti-input { font-size: 13px; color: #c08af0; }
+  input.cell-input.over-shift { border-color: var(--danger) !important; background: rgba(248,81,73,0.16); color: #ff8a80 !important; }
+  input.cell-input.ojti-input::placeholder { color: var(--text-dim); }
+  .ojti-head { color: #c08af0 !important; }
   .delete-btn { background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 4px; line-height: 1; font-family: var(--sans); transition: color 0.15s, background 0.15s; width: 100%; display: block; }
   .delete-btn:hover { color: var(--danger); background: #2d1b1b; }
   .add-row-area { padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); display: flex; gap: 8px; }
@@ -95,34 +112,87 @@
   .export-table th { background: var(--surface2); color: var(--text-muted); font-size: 11px; }
   .export-table tr:nth-child(even) td { background: var(--surface2); }
   .newday-tag { font-size: 10px; background: #2d2010; color: var(--warning); border: 1px solid var(--warning); border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
-  td:has(.newday-tag) { display: flex; align-items: center; }
+  .open-tag { font-size: 10px; background: #12314f; color: #58a6ff; border: 1px solid #58a6ff; border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
+  .close-tag { font-size: 10px; background: #3a1414; color: #ff6b63; border: 1px solid var(--danger); border-radius: 3px; padding: 1px 5px; margin-left: 4px; letter-spacing: 0.06em; display: inline-block; vertical-align: middle; line-height: 1.4; }
+  td:has(.newday-tag), td:has(.open-tag), td:has(.close-tag) { display: flex; align-items: center; }
+  tr.radar-open-row { box-shadow: inset 3px 0 0 #58a6ff; }
+  tr.radar-close-row { box-shadow: inset 3px 0 0 var(--danger); }
+  tr.data-row.flow-error { background: rgba(248,81,73,0.07); }
+  .flow-warn { color: var(--danger); cursor: help; font-size: 12px; margin-left: 2px; }
+  #stat-flow.has-issues { color: var(--danger); }
 
 </style>
 </head>
 <body>
 
+<!-- Cloud login overlay (only shown when cloud sync is configured) -->
+<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:500;background:#0d1117;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:var(--sans)">
+  <div style="background:var(--surface);border:1px solid var(--border-bright);border-radius:12px;padding:28px 30px;width:340px;max-width:92vw">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <div class="radar-icon"></div>
+      <h1 style="font-size:15px">Sign in</h1>
+    </div>
+    <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Email</label>
+    <input id="login-email" type="email" autocomplete="username" style="width:100%;margin:6px 0 14px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()" />
+    <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Password</label>
+    <input id="login-pw" type="password" autocomplete="current-password" style="width:100%;margin:6px 0 16px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')doLogin()" />
+    <button class="primary" style="width:100%;padding:10px" onclick="doLogin()">Sign in</button>
+    <div id="login-error" style="color:var(--danger);font-size:12px;margin-top:10px;min-height:14px"></div>
+    <div style="color:var(--text-dim);font-size:11px;margin-top:6px">Your log is saved to the cloud. If the connection drops, the page reloads and asks you to sign in again — your latest entries are kept safe on this device until you're back.</div>
+  </div>
+</div>
+
+<!-- Tool selection overlay -->
+<div id="tool-select-overlay" style="display:none;position:fixed;inset:0;z-index:400;background:#0d1117;align-items:center;justify-content:center;flex-direction:column;gap:22px;font-family:var(--sans)">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+    <div class="radar-icon"></div>
+    <h1 style="font-size:16px;letter-spacing:.06em">ATC Hours Log</h1>
+  </div>
+  <div style="color:var(--text-muted);font-size:13px">Choose a position to log</div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center">
+    <button onclick="selectTool('tower')" style="width:180px;height:130px;flex-direction:column;gap:12px;display:flex;align-items:center;justify-content:center;border:1px solid #e3b341;color:#e3b341;font-size:16px;border-radius:12px;background:transparent">
+      <span style="font-size:34px;line-height:1">🗼</span>Tower
+    </button>
+    <button onclick="selectTool('radar')" style="width:180px;height:130px;flex-direction:column;gap:12px;display:flex;align-items:center;justify-content:center;border:1px solid #58a6ff;color:#58a6ff;font-size:16px;border-radius:12px;background:transparent">
+      <span style="font-size:34px;line-height:1">📡</span>Radar
+    </button>
+  </div>
+  <div id="tool-signout" style="display:none;margin-top:6px"><button onclick="doSignOut()">Sign out</button></div>
+</div>
+
 <header>
   <div class="header-left">
     <div class="radar-icon"></div>
     <div>
-      <h1>ATC Hours Log</h1>
+      <h1 id="app-title">ATC Hours Log</h1>
       <div class="subtitle" id="airport-subtitle">Loading…</div>
     </div>
   </div>
   <div class="header-actions">
     <button class="primary" onclick="openExport()">Export to Google Sheets ↗</button>
-    <button onclick="openSummary()">Monthly summary</button>
+    <button id="back-btn" onclick="backToSelection()" style="display:none">← Tools</button>
+    <button onclick="openSummary()">Controller summary</button>
+    <button id="report-btn" onclick="openRadarReport()">Monthly report</button>
+    <span id="cloud-status" style="display:none;font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted)"></span>
+    <button id="signout-btn" style="display:none" onclick="doSignOut()">Sign out</button>
     <button class="danger-btn" onclick="confirmClear()">Clear all</button>
   </div>
 </header>
 
+<div id="month-banner" style="display:none;padding:10px 16px;background:#12314f;border-bottom:1px solid #58a6ff;color:#cbe4ff;font-size:13px;align-items:center;gap:12px">
+  <span id="banner-text">📅 It's the 1st — record last month's hours.</span>
+  <button onclick="openRadarReport()" style="border-color:#58a6ff;color:#58a6ff;padding:4px 12px">View last month's report</button>
+  <button onclick="document.getElementById('month-banner').style.display='none'" style="border:none;color:var(--text-muted);margin-left:auto">Dismiss</button>
+</div>
 <div class="help-bar">
   <div class="help-item"><kbd>Tab</kbd> advance field</div>
   <div class="help-item"><kbd>Enter</kbd> next row</div>
   <div class="help-item"><kbd>↑</kbd><kbd>↓</kbd> navigate rows</div>
   <div class="legend">
-    <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>HOW — hand over</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#e3b341"></div>TOW — take over</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3fb950"></div>HOW</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e3b341"></div>TOW</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div>OPEN</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f85149"></div>CLOSED</div>
   </div>
 </div>
 
@@ -131,18 +201,23 @@
     <table id="log-table">
       <thead>
         <tr>
-          <th style="width:36px"></th>
-          <th style="width:100px">UTC Time</th>
-          <th style="width:120px">HOW</th>
-          <th style="width:120px">TOW</th>
-          <th style="width:36px"></th>
+          <th style="width:32px"></th>
+          <th style="width:84px">UTC Time</th>
+          <th style="width:90px">HOW</th>
+          <th style="width:90px">TOW</th>
+          <th style="width:90px" class="ojti-head">OJTI In</th>
+          <th style="width:90px" class="ojti-head">OJTI Out</th>
+          <th style="width:32px"></th>
         </tr>
       </thead>
       <tbody id="log-body"></tbody>
     </table>
   </div>
   <div class="add-row-area">
-    <button class="add-row-btn" onclick="addRow()">+ add entry</button>
+    <button class="add-newday-btn" onclick="openRadar()" style="border-color:#58a6ff;color:#58a6ff">▶ Open</button>
+    <button class="add-newday-btn" onclick="closeRadar()" style="border-color:#f85149;color:#f85149">■ Close</button>
+    <button class="add-row-btn" onclick="addRow()">+ add handover</button>
+    <button class="add-newday-btn" onclick="insertRowBelow()" style="border-color:var(--accent);color:var(--accent)">+ insert below</button>
     <button class="add-newday-btn" onclick="addNewDay()">+ new day</button>
   </div>
 </div>
@@ -152,6 +227,7 @@
   <div class="stat"><div class="stat-label">Total entries</div><div class="stat-value" id="stat-total">0</div></div>
   <div class="stat"><div class="stat-label">Controllers</div><div class="stat-value" id="stat-controllers">—</div></div>
   <div class="stat"><div class="stat-label">Last entry</div><div class="stat-value" id="stat-last">—</div></div>
+  <div class="stat"><div class="stat-label">Flow issues</div><div class="stat-value" id="stat-flow">0</div></div>
 </footer>
 
 <!-- New day date picker modal -->
@@ -206,10 +282,38 @@
   </div>
 </div>
 
+<!-- Monthly radar report modal -->
+<div class="modal-overlay" id="radar-report-modal">
+  <div class="modal" style="width:640px">
+    <div class="modal-header">
+      <h2 id="report-title">Monthly report</h2>
+      <button class="modal-close" onclick="closeModal('radar-report-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+        <label style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Month</label>
+        <input type="month" id="radar-report-month"
+          style="background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);font-family:var(--mono);font-size:14px;padding:6px 10px;border-radius:6px;outline:none;color-scheme:dark"
+          onchange="renderRadarReport()"
+        />
+      </div>
+      <div id="radar-report-body"></div>
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeModal('radar-report-modal')">Close</button>
+      <button class="primary" onclick="exportRadarReportCSV()">Download report CSV</button>
+    </div>
+  </div>
+</div>
+
 <script>
-const STORAGE_KEY = 'atc_log_v5';
+let currentTool = null; // 'tower' | 'radar'
+function toolLabel() { return currentTool === 'tower' ? 'Tower' : 'Radar'; }
+function storageKeyFor(tool) { return tool === 'tower' ? 'tower_log_v2' : 'radar_log_v1'; }
 let rows = [];
 let nextId = 1;
+let selectedRowIndex = -1;
+let dayExtensions = {}; // 'YYYY-MM-DD' -> { start:'HHMM', end:'HHMM' }
 
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -278,16 +382,27 @@ function recalcDates() {
 }
 
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ rows, nextId }));
+  if (!currentTool) return;
+  localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, _savedAt: Date.now() }));
+  scheduleCloudSave();
+}
+
+// Count completed entries so we can push to the cloud every 2 entries.
+let newEntriesSinceSave = 0;
+function noteNewEntry() {
+  if (!CLOUD_ENABLED || !cloudUser) return;
+  newEntriesSinceSave++;
+  if (newEntriesSinceSave >= 2) { newEntriesSinceSave = 0; cloudSave(); }
 }
 
 function load() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKeyFor(currentTool));
     if (raw) {
       const d = JSON.parse(raw);
       rows = d.rows || [];
       nextId = d.nextId || (rows.length + 1);
+      dayExtensions = d.dayExtensions || {};
     }
   } catch(e) {}
 }
@@ -312,14 +427,29 @@ function addRow(opts) {
     tow: opts.tow || '',
     date,
     newDay: opts.newDay || false,
-    towOnly: opts.towOnly || false
+    towOnly: opts.towOnly || false,
+    radarOpen: opts.radarOpen || false,
+    radarClose: opts.radarClose || false,
+    ojtiIn: opts.ojtiIn || '',
+    ojtiOut: opts.ojtiOut || ''
   });
   save();
   render();
   const idx = rows.length - 1;
-  // All rows start at time — for towOnly rows Tab/Enter skips HOW to go to TOW
+  // Radar close rows focus TOW? No — focus time then HOW (closer). towOnly skips to TOW.
   focusCell(idx, 'time');
   updateStats();
+  noteNewEntry();
+}
+
+function openRadar() {
+  // Radar opens: a TOW-only row (opener takes the seat). Focus time, then opener initials in TOW.
+  addRow({ towOnly: true, radarOpen: true, skipHow: true });
+}
+
+function closeRadar() {
+  // Radar closes: a HOW-only row (closer hands over to nobody). Focus time, then closer in HOW.
+  addRow({ radarClose: true, skipHow: true });
 }
 
 function addNewDay() {
@@ -338,7 +468,34 @@ function confirmNewDay() {
   const val = document.getElementById('newday-date-input').value;
   if (!val) return;
   closeModal('newday-modal');
-  addRow({ towOnly: true, newDay: true, date: val, skipHow: true });
+  // At end of day nobody takes over, so clear the TOW of the previous day's last entry
+  if (rows.length > 0) {
+    rows[rows.length - 1].tow = '';
+  }
+  addRow({ towOnly: true, radarOpen: true, newDay: true, date: val, skipHow: true });
+}
+
+function insertRowBelow() {
+  // Insert a blank entry directly after the currently selected row
+  if (selectedRowIndex < 0 || selectedRowIndex >= rows.length) {
+    // Nothing selected -> just add at the end
+    addRow();
+    return;
+  }
+  const idx = selectedRowIndex;
+  const id = nextId++;
+  const prevTOW = rows[idx].tow || '';
+  rows.splice(idx + 1, 0, {
+    id, time: '', how: prevTOW, tow: '', date: rows[idx].date,
+    newDay: false, towOnly: false, ojtiIn: '', ojtiOut: ''
+  });
+  recalcDates();
+  save();
+  render();
+  selectedRowIndex = idx + 1;
+  focusCell(idx + 1, 'time');
+  updateStats();
+  noteNewEntry();
 }
 
 function deleteRow(idx) {
@@ -357,7 +514,7 @@ function focusCell(rowIdx, field) {
 }
 
 function updateField(idx, field, value) {
-  rows[idx][field] = field === 'time' ? value : value.toUpperCase();
+  rows[idx][field] = (field === 'how' || field === 'tow') ? value.toUpperCase() : value;
   save();
   updateStats();
 }
@@ -368,7 +525,7 @@ function render() {
 
   if (rows.length === 0) {
     const empty = document.createElement('tr');
-    empty.innerHTML = `<td colspan="5" style="text-align:center;padding:48px 16px;color:var(--text-dim);font-size:13px;letter-spacing:.04em">Press <b style="color:var(--warning)">+ new day</b> to start logging</td>`;
+    empty.innerHTML = `<td colspan="7" style="text-align:center;padding:48px 16px;color:var(--text-dim);font-size:13px;letter-spacing:.04em">Press <b style="color:var(--warning)">+ new day</b> to start logging</td>`;
     tbody.appendChild(empty);
     updateStats();
     return;
@@ -379,14 +536,27 @@ function render() {
   rows.forEach((row, idx) => {
     const date = row.date || todayStr();
 
-    // Insert date banner when date changes (but not before the very first row unless it's a forced newDay)
+    // Insert date banner (with extension boxes) whenever the date changes — including the first day
     if (date !== lastDate) {
-      if (lastDate !== null || row.newDay) {
-        const divRow = document.createElement('tr');
-        divRow.className = 'date-divider';
-        divRow.innerHTML = `<td colspan="5">— ${formatDateBanner(date)} —</td>`;
-        tbody.appendChild(divRow);
-      }
+      const ext = dayExtensions[date] || {};
+      const divRow = document.createElement('tr');
+      divRow.className = 'date-divider';
+      divRow.innerHTML = `<td colspan="7">
+        <div class="ext-cell">
+          <div class="ext-group">
+            <span class="ext-label">Early ext (start)</span>
+            <input class="ext-input" data-date="${date}" data-ext="start"
+              value="${ext.start || ''}" placeholder="—" maxlength="4" inputmode="numeric" autocomplete="off" spellcheck="false" />
+          </div>
+          <div class="ext-date">— ${formatDateBanner(date)} —</div>
+          <div class="ext-group right">
+            <span class="ext-label">Late ext (end)</span>
+            <input class="ext-input" data-date="${date}" data-ext="end"
+              value="${ext.end || ''}" placeholder="—" maxlength="4" inputmode="numeric" autocomplete="off" spellcheck="false" />
+          </div>
+        </div>
+      </td>`;
+      tbody.appendChild(divRow);
       lastDate = date;
     }
 
@@ -395,9 +565,16 @@ function render() {
     tr.dataset.idx = idx;
 
     const timeValid = validateTime(row.time);
-    const isTowOnly = row.towOnly;
+    const isTowOnly = row.towOnly;          // radar OPEN / day-start: HOW disabled
+    const isHowOnly = row.radarClose;        // radar CLOSE: TOW disabled
+    if (row.radarOpen) tr.classList.add('radar-open-row');
+    if (row.radarClose) tr.classList.add('radar-close-row');
 
-    // All rows have a time input — new-day rows just start focused on TOW after time
+    // TOW cell tag depends on row type
+    let towTag = '';
+    if (row.radarOpen) towTag = `<span class="open-tag">${toolLabel().toUpperCase()} OPEN</span>`;
+    else if (isTowOnly) towTag = `<span class="newday-tag">DAY START</span>`;
+
     tr.innerHTML = `
       <td class="row-num">${idx+1}</td>
       <td>
@@ -415,7 +592,7 @@ function render() {
         <input class="cell-input initials-input how-input"
           data-row="${idx}" data-field="how"
           value="${row.how}"
-          placeholder="${isTowOnly ? '—' : 'Initials'}"
+          placeholder="${isTowOnly ? '—' : (isHowOnly ? 'Closed by' : 'Initials')}"
           maxlength="4"
           autocomplete="off"
           spellcheck="false"
@@ -426,12 +603,36 @@ function render() {
         <input class="cell-input initials-input tow-input"
           data-row="${idx}" data-field="tow"
           value="${row.tow}"
-          placeholder="Initials"
+          placeholder="${isHowOnly ? '—' : 'Initials'}"
           maxlength="4"
           autocomplete="off"
           spellcheck="false"
+          ${isHowOnly ? 'disabled style="opacity:0.25;pointer-events:none"' : ''}
         />
-        ${isTowOnly ? `<span class="newday-tag">DAY START</span>` : ''}
+        ${towTag}
+        ${isHowOnly ? `<span class="close-tag">${toolLabel().toUpperCase()} CLOSED</span>` : ''}
+      </td>
+      <td>
+        <input class="cell-input ojti-input"
+          data-row="${idx}" data-field="ojtiIn"
+          value="${row.ojtiIn || ''}"
+          placeholder="—"
+          maxlength="4"
+          inputmode="numeric"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </td>
+      <td>
+        <input class="cell-input ojti-input"
+          data-row="${idx}" data-field="ojtiOut"
+          value="${row.ojtiOut || ''}"
+          placeholder="—"
+          maxlength="4"
+          inputmode="numeric"
+          autocomplete="off"
+          spellcheck="false"
+        />
       </td>
       <td>
         <button class="delete-btn" onclick="deleteRow(${idx})" title="Delete row">✕</button>
@@ -442,8 +643,15 @@ function render() {
   });
 
   attachInputListeners();
+  attachExtListeners();
   markEmptyFields();
   markLongShifts();
+  markFlowErrors();
+  // Re-apply selected row highlight after re-render
+  if (selectedRowIndex >= 0) {
+    const selTr = document.querySelector(`tr.data-row[data-idx="${selectedRowIndex}"]`);
+    if (selTr) selTr.classList.add('selected');
+  }
   updateSubtitle();
   updateStats();
 }
@@ -463,6 +671,11 @@ function markEmptyFields() {
     if (inp.disabled) return;
     const idx = parseInt(inp.dataset.row);
     const field = inp.dataset.field;
+    // OJTI fields are optional — never flagged red
+    if (field === 'ojtiIn' || field === 'ojtiOut') {
+      inp.classList.remove('empty-field');
+      return;
+    }
     // Exempt TOW on end-of-day rows
     if (field === 'tow' && exemptTOW.has(idx)) {
       inp.classList.remove('empty-field');
@@ -473,43 +686,116 @@ function markEmptyFields() {
   });
 }
 
-// Build a map of rowIndex -> minutes on shift for the TOW controller at that row.
-// The controller TOW'd in at some earlier row; we find when and diff with this row's time.
+// Detect entries where the handover flow doesn't make sense and return { rowIdx: [messages] }.
+function computeFlowErrors() {
+  const errors = {};
+  const add = (i, msg) => { (errors[i] = errors[i] || []).push(msg); };
+  let occupant = null;   // initials of who currently holds the seat, or null if closed
+  let lastDate = null, lastTime = null;
+  rows.forEach((row, idx) => {
+    if (row.date !== lastDate) { occupant = null; lastTime = null; lastDate = row.date; }
+    const t = (row.time && validateTime(row.time)) ? timeToMins(row.time) : null;
+    if (t !== null && lastTime !== null && t < lastTime) add(idx, 'Time is earlier than the row above');
+    if (t !== null) lastTime = t;
+
+    if (row.radarOpen || row.towOnly) {
+      // OPEN / day-start: TOW is the opener
+      if (occupant !== null) add(idx, 'Opened while already open — a close is missing above');
+      if (row.tow) occupant = row.tow;
+    } else if (row.radarClose) {
+      // CLOSE: HOW is the closer, no TOW
+      if (occupant === null) add(idx, 'Closed while already closed — an open is missing above');
+      else if (row.how && row.how !== occupant) add(idx, `Closer should be ${occupant} (who is in the seat)`);
+      occupant = null;
+    } else {
+      // Normal handover
+      if (occupant === null) {
+        if (row.how || row.tow) add(idx, 'Handover while the position is closed — needs an open first');
+      } else if (row.how && row.how !== occupant) {
+        add(idx, `HOW should be ${occupant} (who is in the seat), not ${row.how}`);
+      }
+      if (row.how && row.tow && row.how === row.tow) add(idx, 'HOW and TOW are the same person');
+      if (row.tow) occupant = row.tow;
+    }
+  });
+  return errors;
+}
+
+function markFlowErrors() {
+  const errs = computeFlowErrors();
+  document.querySelectorAll('tr.data-row').forEach(tr => {
+    const idx = parseInt(tr.dataset.idx);
+    const rn = tr.querySelector('.row-num');
+    tr.classList.remove('flow-error');
+    if (errs[idx]) {
+      tr.classList.add('flow-error');
+      if (rn) rn.innerHTML = (idx+1) + ` <span class="flow-warn" title="${errs[idx].join(' • ').replace(/"/g,'&quot;')}">⚠</span>`;
+    } else if (rn) {
+      rn.textContent = (idx+1);
+    }
+  });
+  const count = Object.keys(errs).length;
+  const el = document.getElementById('stat-flow');
+  if (el) { el.textContent = count; el.classList.toggle('has-issues', count > 0); }
+}
+
+// Highlight a controller's TOW (seat entry) and HOW (seat exit) based on time in seat.
+// Exactly 2h (120 min) -> yellow;  more than 2h -> red.
 function markLongShifts() {
-  // For each row, the HOW controller sat down when they appeared as TOW on an earlier row.
-  // If that gap is >= 120 mins, highlight the HOW input on this row (and only HOW).
-  // towStart tracks: initials -> time they last appeared as TOW
-  const towStart = {}; // initials -> time string
-  // longHOW[idx] = true if the HOW on that row has been in seat >= 120 mins
-  const longHOW = {};
+  // towStart tracks initials -> { time, rowIdx } of where they took the seat
+  const towStart = {};
+  // marks keyed by "idx:field" -> 'long' (yellow) | 'over' (red)
+  const marks = {};
 
   rows.forEach((row, idx) => {
     if (row.how && row.time && validateTime(row.time)) {
-      const startTime = towStart[row.how];
-      if (startTime) {
-        const startMins = timeToMins(startTime);
+      const startEntry = towStart[row.how];
+      if (startEntry) {
+        const startMins = timeToMins(startEntry.time);
         let endMins = timeToMins(row.time);
         if (startMins !== null && endMins !== null) {
           if (endMins < startMins) endMins += 24 * 60;
-          if (endMins - startMins >= 120) longHOW[idx] = true;
+          const dur = endMins - startMins;
+          let level = null;
+          if (dur > 120) level = 'over';
+          else if (dur >= 120) level = 'long';
+          if (level) {
+            // Mark the TOW cell where they took the seat and the HOW cell where they leave
+            marks[startEntry.rowIdx + ':tow'] = level;
+            marks[idx + ':how'] = level;
+          }
         }
       }
     }
-    // Record when this controller took over
     if (row.tow && row.time && validateTime(row.time)) {
-      towStart[row.tow] = row.time;
+      towStart[row.tow] = { time: row.time, rowIdx: idx };
     }
   });
 
   document.querySelectorAll('.cell-input.initials-input').forEach(inp => {
     const idx = parseInt(inp.dataset.row);
     const field = inp.dataset.field;
-    // Only highlight HOW, and only when flagged
-    if (field === 'how' && longHOW[idx]) {
-      inp.classList.add('long-shift');
-    } else {
-      inp.classList.remove('long-shift');
-    }
+    const level = marks[idx + ':' + field];
+    inp.classList.remove('long-shift', 'over-shift');
+    if (level === 'long') inp.classList.add('long-shift');
+    else if (level === 'over') inp.classList.add('over-shift');
+  });
+}
+
+function attachExtListeners() {
+  document.querySelectorAll('.ext-input').forEach(inp => {
+    const date = inp.dataset.date;
+    const which = inp.dataset.ext; // 'start' | 'end'
+    inp.addEventListener('input', e => {
+      let val = e.target.value.replace(/\D/g, '');
+      if (val !== e.target.value) e.target.value = val;
+      if (!dayExtensions[date]) dayExtensions[date] = {};
+      dayExtensions[date][which] = val;
+      // validity hint
+      if (val.length === 4 && !validateTime(val)) inp.classList.add('error');
+      else inp.classList.remove('error');
+      save();
+    });
   });
 }
 
@@ -518,6 +804,13 @@ function attachInputListeners() {
     const idx = parseInt(inp.dataset.row);
     const field = inp.dataset.field;
     const row = rows[idx];
+
+    inp.addEventListener('focus', () => {
+      selectedRowIndex = idx;
+      document.querySelectorAll('tr.data-row').forEach(tr => {
+        tr.classList.toggle('selected', parseInt(tr.dataset.idx) === idx);
+      });
+    });
 
     inp.addEventListener('input', e => {
       let val = e.target.value;
@@ -542,6 +835,16 @@ function attachInputListeners() {
           }
         } else {
           inp.classList.remove('error');
+        }
+      } else if (field === 'ojtiIn' || field === 'ojtiOut') {
+        // OJTI times are optional numeric HHMM fields
+        val = val.replace(/\D/g, '');
+        if (val !== e.target.value) e.target.value = val;
+        updateField(idx, field, val);
+        if (val.length === 4 && !validateTime(val)) inp.classList.add('error');
+        else inp.classList.remove('error');
+        if (field === 'ojtiIn' && val.length === 4 && validateTime(val)) {
+          focusCell(idx, 'ojtiOut');
         }
       } else {
         val = val.replace(/[^a-zA-Z]/g, '').toUpperCase();
@@ -568,6 +871,10 @@ function attachInputListeners() {
           } else {
             focusCell(idx + 1, rows[idx+1].towOnly ? 'tow' : 'time');
           }
+        } else if (field === 'ojtiIn') {
+          focusCell(idx, 'ojtiOut');
+        } else if (field === 'ojtiOut') {
+          if (idx < rows.length - 1) focusCell(idx + 1, rows[idx+1].towOnly ? 'tow' : 'time');
         }
       } else if (e.key === 'Enter') {
         e.preventDefault();
@@ -612,18 +919,19 @@ function addRowAfterTOW(towVal) {
   // HOW is pre-filled with the TOW just entered
   const id = nextId++;
   const date = inferDateForRow(rows.length);
-  rows.push({ id, time: '', how: towVal || '', tow: '', date, newDay: false, towOnly: false });
+  rows.push({ id, time: '', how: towVal || '', tow: '', date, newDay: false, towOnly: false, ojtiIn: '', ojtiOut: '' });
   save();
   render();
   focusCell(rows.length - 1, 'time');
   updateStats();
+  noteNewEntry();
 }
 
 function updateSubtitle() {
   const el = document.getElementById('airport-subtitle');
   const d = new Date();
   const utc = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
-  el.textContent = `${todayStr()} · ${utc} · OPS 0800–2300`;
+  el.textContent = `${todayStr()} · ${utc} · USUAL 0800–2100 LOCAL · WKND/BH 0830–1800 LOCAL · LOG IN UTC(z)`;
 }
 
 function updateStats() {
@@ -638,20 +946,18 @@ function updateStats() {
 }
 
 function calcSummary() {
+  // summary[month][ctrl] = { mins, ojti }
+  // Built from full seat sessions (TOW -> HOW) so OJTI window overlap is applied consistently.
   const summary = {};
-  rows.forEach((row, idx) => {
-    const nextRow = rows[idx+1];
-    if (!row.tow || !row.time || !nextRow || !nextRow.time) return;
-    const startMins = timeToMins(row.time);
-    let endMins = timeToMins(nextRow.time);
-    if (endMins === null || startMins === null) return;
-    if (endMins <= startMins) endMins += 24*60;
-    const duration = endMins - startMins;
-    const monthKey = (row.date || '?').slice(0,7);
-    const controller = row.tow;
-    if (!summary[monthKey]) summary[monthKey] = {};
-    if (!summary[monthKey][controller]) summary[monthKey][controller] = 0;
-    summary[monthKey][controller] += duration;
+  const shifts = buildControllerShifts();
+  Object.entries(shifts).forEach(([ctrl, recs]) => {
+    recs.forEach(r => {
+      const monthKey = (r.date || '?').slice(0,7);
+      if (!summary[monthKey]) summary[monthKey] = {};
+      if (!summary[monthKey][ctrl]) summary[monthKey][ctrl] = { mins: 0, ojti: 0 };
+      summary[monthKey][ctrl].mins += r.durMins;
+      if (r.ojtiMins) summary[monthKey][ctrl].ojti += r.ojtiMins;
+    });
   });
   return summary;
 }
@@ -668,10 +974,11 @@ function openSummary() {
     : '';
   months.forEach(month => {
     html += `<div style="margin-bottom:20px"><div style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--warning);margin-bottom:8px">${month}</div>
-      <table class="export-table"><thead><tr><th>Controller</th><th>Total time</th><th>Shifts</th></tr></thead><tbody>`;
-    Object.entries(summary[month]).sort((a,b)=>b[1]-a[1]).forEach(([ctrl, mins]) => {
+      <table class="export-table"><thead><tr><th>Controller</th><th>Total time</th><th style="color:#c08af0">OJTI</th><th>Shifts</th></tr></thead><tbody>`;
+    Object.entries(summary[month]).sort((a,b)=>b[1].mins-a[1].mins).forEach(([ctrl, rec]) => {
       const shifts = rows.filter(r => r.date && r.date.startsWith(month) && r.tow === ctrl).length;
-      html += `<tr><td>${ctrl}</td><td>${minsToHHMM(mins)}</td><td>${shifts}</td></tr>`;
+      const ojtiCell = rec.ojti > 0 ? minsToHHMM(rec.ojti) : '—';
+      html += `<tr><td>${ctrl}</td><td>${minsToHHMM(rec.mins)}</td><td style="color:#c08af0">${ojtiCell}</td><td>${shifts}</td></tr>`;
     });
     html += `</tbody></table></div>`;
   });
@@ -681,24 +988,57 @@ function openSummary() {
 
 function exportSummaryCSV() {
   const summary = calcSummary();
-  let csv = 'Month,Controller,Hours,Minutes,Total (h:mm)\n';
+  let csv = 'Month,Controller,Total (h:mm),OJTI (h:mm)\n';
   Object.keys(summary).sort().forEach(month => {
-    Object.entries(summary[month]).sort().forEach(([ctrl, mins]) => {
-      const h = Math.floor(mins/60); const m = mins%60;
-      csv += `${month},${ctrl},${h},${m},${h}:${pad(m)}\n`;
+    Object.entries(summary[month]).sort().forEach(([ctrl, rec]) => {
+      const h = Math.floor(rec.mins/60); const m = rec.mins%60;
+      const oh = Math.floor(rec.ojti/60); const om = rec.ojti%60;
+      const ojtiStr = rec.ojti > 0 ? `${oh}:${pad(om)}` : '';
+      csv += `${month},${ctrl},${h}:${pad(m)},${ojtiStr}\n`;
     });
   });
   downloadCSV(csv, 'atc_monthly_summary.csv');
 }
 
 // Build per-controller shift records: { ctrl -> [{date, start, end, durMins}] }
+// Collect OJTI training windows: pair OJTI IN times with OJTI OUT times in row order.
+// Each window = { date, inMins, outMins }. The window is later split across whichever
+// controllers held the seat during it.
+function collectOjtiWindows() {
+  const ins = [];  // { mins, date }
+  const outs = []; // { mins, date }
+  rows.forEach(row => {
+    if (row.ojtiIn && validateTime(row.ojtiIn)) ins.push({ mins: timeToMins(row.ojtiIn), date: row.date });
+    if (row.ojtiOut && validateTime(row.ojtiOut)) outs.push({ mins: timeToMins(row.ojtiOut), date: row.date });
+  });
+  const windows = [];
+  const n = Math.min(ins.length, outs.length);
+  for (let i = 0; i < n; i++) {
+    let inMins = ins[i].mins;
+    let outMins = outs[i].mins;
+    if (outMins < inMins) outMins += 24 * 60; // crossed midnight
+    windows.push({ date: ins[i].date, inMins, outMins });
+  }
+  return windows;
+}
+
+// Overlap in minutes between a seat session [sStart,sEnd] on date sDate and any OJTI window.
+function ojtiOverlapForSession(sStart, sEnd, sDate, windows) {
+  let total = 0;
+  windows.forEach(w => {
+    if (w.date !== sDate) return; // only same-day windows
+    const lo = Math.max(sStart, w.inMins);
+    const hi = Math.min(sEnd, w.outMins);
+    if (hi > lo) total += (hi - lo);
+  });
+  return total;
+}
+
 function buildControllerShifts() {
-  const shifts = {}; // ctrl -> array of {date, start, end, durMins}
-  // Track when each controller last took over
-  const towStart = {}; // ctrl -> {time, date}
+  const shifts = {}; // ctrl -> array of {date, start, end, durMins, ojtiMins}
+  const towStart = {}; // ctrl -> {time, date, rowIdx}
+  const windows = collectOjtiWindows();
   rows.forEach((row, idx) => {
-    // When a hand-over happens (row.how leaves, row.tow takes over)
-    // The HOW controller's shift ends at row.time; their shift started when they TOW'd
     if (row.how && row.time && validateTime(row.time)) {
       const ctrl = row.how;
       const startEntry = towStart[ctrl];
@@ -708,18 +1048,20 @@ function buildControllerShifts() {
         if (startMins !== null && endMins !== null) {
           if (endMins < startMins) endMins += 24 * 60;
           if (!shifts[ctrl]) shifts[ctrl] = [];
+          // OJTI = overlap of this seat session with any training window
+          const ojtiMins = ojtiOverlapForSession(startMins, endMins, startEntry.date || row.date, windows);
           shifts[ctrl].push({
             date: startEntry.date || row.date,
             start: startEntry.time,
             end: row.time,
-            durMins: endMins - startMins
+            durMins: endMins - startMins,
+            ojtiMins: ojtiMins > 0 ? ojtiMins : null
           });
         }
       }
     }
-    // Record when this controller took over
     if (row.tow && row.time && validateTime(row.time)) {
-      towStart[row.tow] = { time: row.time, date: row.date };
+      towStart[row.tow] = { time: row.time, date: row.date, rowIdx: idx };
     }
   });
   return shifts;
@@ -727,6 +1069,189 @@ function buildControllerShifts() {
 
 function fmtTime(t) { return t ? t.slice(0,2)+':'+t.slice(2) : ''; }
 function fmtDur(mins) { return mins != null ? Math.floor(mins/60)+'h '+pad(mins%60)+'m' : ''; }
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// MONTHLY RADAR REPORT
+// Usual radar hours (UTC/z): weekdays 07:00–21:00; weekends & bank holidays 08:30–18:00.
+// Extensions = radar open beyond the usual total for that day.
+// Bank holidays: England & Wales. Edit the list below if you operate elsewhere.
+// ─────────────────────────────────────────────────────────────────────────
+const BANK_HOLIDAYS = new Set([
+  // 2025
+  '2025-01-01','2025-04-18','2025-04-21','2025-05-05','2025-05-26','2025-08-25','2025-12-25','2025-12-26',
+  // 2026
+  '2026-01-01','2026-04-03','2026-04-06','2026-05-04','2026-05-25','2026-08-31','2026-12-25','2026-12-28'
+]);
+
+function isReducedDay(dateStr) {
+  // weekend or bank holiday => reduced hours (0830–1800)
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dow = new Date(Date.UTC(y, m-1, d)).getUTCDay(); // 0 Sun .. 6 Sat
+  if (dow === 0 || dow === 6) return true;
+  return BANK_HOLIDAYS.has(dateStr);
+}
+
+// Minutes UK local time is ahead of UTC on a given date: +60 during BST, 0 during GMT.
+function londonOffsetMinutes(dateStr) {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const inst = new Date(Date.UTC(y, m-1, d, 12, 0, 0)); // noon UTC — safely away from DST switch
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/London', hour12: false,
+    year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'
+  });
+  const p = {}; dtf.formatToParts(inst).forEach(x => { if (x.type !== 'literal') p[x.type] = x.value; });
+  const hh = p.hour === '24' ? 0 : Number(p.hour);
+  const asLocalWallClockUTC = Date.UTC(Number(p.year), Number(p.month)-1, Number(p.day), hh, Number(p.minute), Number(p.second));
+  return Math.round((asLocalWallClockUTC - inst.getTime()) / 60000);
+}
+
+// Normal operating hours are LOCAL: weekdays 0800–2100, weekends/bank holidays 0830–1800.
+// Logged open/close and extension times are UTC, so we return the normal open/close in UTC too.
+function usualHoursFor(dateStr) {
+  const off = londonOffsetMinutes(dateStr); // local = UTC + off
+  let localOpen, localClose;
+  if (isReducedDay(dateStr)) { localOpen = 8*60+30; localClose = 18*60; }  // 0830–1800 local
+  else { localOpen = 8*60; localClose = 21*60; }                            // 0800–2100 local
+  // UTC = local - offset. Duration is offset-independent.
+  return { openMins: localOpen - off, closeMins: localClose - off, totalMins: localClose - localOpen };
+}
+
+// Compute per-day radar open/close totals for a given month key 'YYYY-MM'.
+function computeRadarMonthly(monthKey) {
+  // Gather events per date, in row order
+  const byDate = {}; // date -> [{type:'open'|'close', mins}]
+  rows.forEach(row => {
+    if (!row.date || !row.date.startsWith(monthKey)) return;
+    if (!row.time || !validateTime(row.time)) return;
+    if (row.radarOpen) {
+      (byDate[row.date] = byDate[row.date] || []).push({ type:'open', mins: timeToMins(row.time) });
+    } else if (row.radarClose) {
+      (byDate[row.date] = byDate[row.date] || []).push({ type:'close', mins: timeToMins(row.time) });
+    }
+  });
+
+  const days = [];
+  Object.keys(byDate).sort().forEach(date => {
+    const evts = byDate[date];
+    let openMins = null, closeMins = null, total = 0;
+    let curOpen = null;
+    evts.forEach(e => {
+      if (e.type === 'open') {
+        if (openMins === null) openMins = e.mins;
+        curOpen = e.mins;
+      } else { // close
+        closeMins = e.mins;
+        if (curOpen !== null) {
+          let end = e.mins;
+          if (end < curOpen) end += 24*60;
+          total += (end - curOpen);
+          curOpen = null;
+        }
+      }
+    });
+    const usual = usualHoursFor(date);
+    // Extensions come from the date-line boxes: an early start time before normal open,
+    // and a late end time after normal close.
+    const ext = dayExtensions[date] || {};
+    const extStart = (ext.start && validateTime(ext.start)) ? timeToMins(ext.start) : null;
+    const extEnd   = (ext.end   && validateTime(ext.end))   ? timeToMins(ext.end)   : null;
+    const morningExt = (extStart !== null && extStart < usual.openMins) ? (usual.openMins - extStart) : 0;
+    const eveningExt = (extEnd   !== null && extEnd   > usual.closeMins) ? (extEnd - usual.closeMins) : 0;
+    const extension = morningExt + eveningExt;
+    // Total time the radar is available to be open = normal window + extensions
+    const available = usual.totalMins + extension;
+    // Total time closed = available minus time actually open (never below zero)
+    const closed = Math.max(0, available - total);
+    days.push({
+      date, openMins, closeMins,
+      total, available, closed,
+      morningExt, eveningExt, extension,
+      extStart, extEnd,
+      usual: usual.totalMins, reduced: isReducedDay(date)
+    });
+  });
+
+  const totOpen      = days.reduce((s,d)=>s+d.total,0);
+  const totClosed    = days.reduce((s,d)=>s+d.closed,0);
+  const totAvailable = days.reduce((s,d)=>s+d.available,0);
+  const totExt       = days.reduce((s,d)=>s+d.extension,0);
+  return { days, totOpen, totClosed, totAvailable, totExt };
+}
+
+function fmtMins(m) {
+  if (m == null) return '—';
+  return pad(Math.floor(m/60)) + ':' + pad(m%60);
+}
+
+function prevMonthKey() {
+  const d = new Date();
+  let y = d.getUTCFullYear(), m = d.getUTCMonth(); // 0-based; m is current month, so m == previous month index already? No.
+  // Current month is d.getUTCMonth()+1. Previous month:
+  m = d.getUTCMonth(); // 0..11 for current
+  let py = y, pm = m - 1;
+  if (pm < 0) { pm = 11; py -= 1; }
+  return `${py}-${pad(pm+1)}`;
+}
+
+function openRadarReport() {
+  const inp = document.getElementById('radar-report-month');
+  if (!inp.value) inp.value = prevMonthKey();
+  renderRadarReport();
+  document.getElementById('radar-report-modal').classList.add('open');
+}
+
+function renderRadarReport() {
+  const monthKey = document.getElementById('radar-report-month').value || prevMonthKey();
+  const { days, totOpen, totClosed, totAvailable, totExt } = computeRadarMonthly(monthKey);
+  let html = '';
+  if (days.length === 0) {
+    html = '<p style="color:var(--text-muted);font-size:13px">No radar open/close events logged for this month.</p>';
+  } else {
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    html += `<table class="export-table" style="font-size:11px"><thead><tr>
+      <th>Date</th><th>Day</th><th>Open</th><th>Close</th>
+      <th title="Early extension">Early</th><th title="Late extension">Late</th>
+      <th title="Total time available to be open">Available</th>
+      <th style="color:#3fb950">Total open</th><th style="color:#ff8a80">Total closed</th></tr></thead><tbody>`;
+    days.forEach(d => {
+      const [y,mo,da] = d.date.split('-').map(Number);
+      const dn = dayNames[new Date(Date.UTC(y,mo-1,da)).getUTCDay()];
+      const dayLabel = d.reduced ? `${dn}*` : dn;
+      const early = d.morningExt > 0 ? `<span style="color:#f0c040">${fmtMins(d.morningExt)}</span>` : '—';
+      const late  = d.eveningExt > 0 ? `<span style="color:#f0c040">${fmtMins(d.eveningExt)}</span>` : '—';
+      html += `<tr>
+        <td>${d.date}</td><td>${dayLabel}</td>
+        <td>${fmtMins(d.openMins)}</td><td>${fmtMins(d.closeMins)}</td>
+        <td>${early}</td><td>${late}</td>
+        <td>${fmtMins(d.available)}</td>
+        <td style="color:#3fb950">${fmtMins(d.total)}</td>
+        <td style="color:#ff8a80">${fmtMins(d.closed)}</td></tr>`;
+    });
+    html += `</tbody><tfoot><tr style="border-top:2px solid var(--border-bright)">
+      <td colspan="6" style="text-align:right;font-weight:600">Month totals</td>
+      <td style="font-weight:600;color:var(--accent)">${fmtMins(totAvailable)}</td>
+      <td style="font-weight:600;color:#3fb950">${fmtMins(totOpen)}</td>
+      <td style="font-weight:600;color:#ff8a80">${fmtMins(totClosed)}</td></tr></tfoot></table>`;
+    html += `<p style="font-size:11px;color:var(--text-dim);margin-top:10px">* reduced-hours day (weekend / bank holiday), usual <b>0830–1800 local</b>. Weekdays usual <b>0800–2100 local</b>. Logged open/close and extension times are <b>UTC (z)</b>; normal hours are converted from local (BST/GMT) automatically for the date.<br>
+      <b>Early / Late</b> = extension durations from the date-line boxes. <b>Available</b> = usual hours + extensions. <b>Total open</b> = logged open time. <b>Total closed</b> = available − open.</p>`;
+  }
+  document.getElementById('radar-report-body').innerHTML = html;
+}
+
+function exportRadarReportCSV() {
+  const monthKey = document.getElementById('radar-report-month').value || prevMonthKey();
+  const { days, totOpen, totClosed, totAvailable, totExt } = computeRadarMonthly(monthKey);
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let csv = 'Date,Day,Open (z),Close (z),Early Ext (h:mm),Late Ext (h:mm),Available (h:mm),Total Open (h:mm),Total Closed (h:mm)\n';
+  days.forEach(d => {
+    const [y,mo,da] = d.date.split('-').map(Number);
+    const dn = dayNames[new Date(Date.UTC(y,mo-1,da)).getUTCDay()] + (d.reduced ? '*' : '');
+    csv += `${d.date},${dn},${fmtMins(d.openMins)},${fmtMins(d.closeMins)},${fmtMins(d.morningExt)},${fmtMins(d.eveningExt)},${fmtMins(d.available)},${fmtMins(d.total)},${fmtMins(d.closed)}\n`;
+  });
+  csv += `,,,,,TOTAL,${fmtMins(totAvailable)},${fmtMins(totOpen)},${fmtMins(totClosed)}\n`;
+  downloadCSV(csv, `radar_report_${monthKey}.csv`);
+}
 
 function openExport() {
   let html = '<p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Download CSV then import into Google Sheets via <b>File → Import</b>.</p>';
@@ -742,10 +1267,11 @@ function openExport() {
         const recs = shifts[ctrl];
         html += `<div style="margin-bottom:18px">
           <div style="font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px">${ctrl}</div>
-          <table class="export-table"><thead><tr><th>Date</th><th>Start</th><th>End</th><th>Duration</th></tr></thead><tbody>`;
+          <table class="export-table"><thead><tr><th>Date</th><th>Start</th><th>End</th><th>Duration</th><th style="color:#c08af0">OJTI</th></tr></thead><tbody>`;
         recs.forEach(r => {
           const warn = r.durMins >= 120 ? ' style="color:#f0c040"' : '';
-          html += `<tr><td>${r.date}</td><td>${fmtTime(r.start)}</td><td>${fmtTime(r.end)}</td><td${warn}>${fmtDur(r.durMins)}</td></tr>`;
+          const ojti = r.ojtiMins != null ? fmtDur(r.ojtiMins) : '';
+          html += `<tr><td>${r.date}</td><td>${fmtTime(r.start)}</td><td>${fmtTime(r.end)}</td><td${warn}>${fmtDur(r.durMins)}</td><td style="color:#c08af0">${ojti}</td></tr>`;
         });
         html += '</tbody></table></div>';
       });
@@ -765,9 +1291,9 @@ function exportCSV() {
     downloadCSV(csv, 'atc_hours_log.csv');
     return;
   }
-  // Wide format: Date | CT1 Start | CT1 End | CT1 Duration | CT2 Start | ...
-  const header1 = ['Date', ...controllers.flatMap(c => [c, '', ''])].join(',');
-  const header2 = ['', ...controllers.flatMap(() => ['Start','End','Duration'])].join(',');
+  // Wide format per controller: Start | End | Duration | OJTI
+  const header1 = ['Date', ...controllers.flatMap(c => [c, '', '', ''])].join(',');
+  const header2 = ['', ...controllers.flatMap(() => ['Start','End','Duration','OJTI'])].join(',');
   // Find max rows across all controllers
   const maxRows = Math.max(...controllers.map(c => shifts[c].length));
   const dataRows = [];
@@ -776,7 +1302,9 @@ function exportCSV() {
     const date = controllers.map(c => shifts[c][i]?.date).find(Boolean) || '';
     const cells = [date, ...controllers.flatMap(c => {
       const r = shifts[c][i];
-      return r ? [fmtTime(r.start), fmtTime(r.end), fmtDur(r.durMins)] : ['','',''];
+      if (!r) return ['','','',''];
+      const ojti = r.ojtiMins != null ? fmtDur(r.ojtiMins) : '';
+      return [fmtTime(r.start), fmtTime(r.end), fmtDur(r.durMins), ojti];
     })];
     dataRows.push(cells.join(','));
   }
@@ -810,10 +1338,176 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
 });
 
-load();
-render();
-updateStats();
-updateSubtitle();
+// ═════════════════════════════════════════════════════════════════════════
+// CLOUD SYNC + LOGIN  (Supabase).  OPTIONAL — leave keys blank to run local-only.
+// To enable: create a free Supabase project, then paste the two values below.
+// Setup SQL + steps are in the notes accompanying this file.
+// ═════════════════════════════════════════════════════════════════════════
+const SUPABASE_URL      = 'https://pnbuauhiubfgjqtjhjyh.supabase.co/rest/v1/';   // e.g. 'https://abcdxyz.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBuYnVhdWhpdWJmZ2pxdGpoanloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNzk0MDksImV4cCI6MjEwMDc1NTQwOX0.NNsnuZof-QKnB95vDUEupwhTky04rcV6LU6LWOoDDVM';   // your project's anon/public key
+const CLOUD_ENABLED     = !!(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
+
+let supa = null, cloudUser = null, cloudSaveTimer = null, handlingLoss = false;
+
+function setCloudStatus(text, color) {
+  const el = document.getElementById('cloud-status');
+  if (!el) return;
+  el.style.display = 'inline-block';
+  el.textContent = text;
+  el.style.color = color || 'var(--text-muted)';
+  el.style.borderColor = color || 'var(--border)';
+}
+
+function showLogin(msg) {
+  document.getElementById('login-overlay').style.display = 'flex';
+  if (msg) document.getElementById('login-error').textContent = msg;
+  setTimeout(() => { const e = document.getElementById('login-email'); if (e) e.focus(); }, 50);
+}
+function hideLogin() { document.getElementById('login-overlay').style.display = 'none'; }
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pw = document.getElementById('login-pw').value;
+  document.getElementById('login-error').textContent = '';
+  if (!email || !pw) { document.getElementById('login-error').textContent = 'Enter email and password.'; return; }
+  try {
+    const { data, error } = await supa.auth.signInWithPassword({ email, password: pw });
+    if (error) { document.getElementById('login-error').textContent = error.message; return; }
+    onLoggedIn(data.user);
+  } catch (e) {
+    document.getElementById('login-error').textContent = 'Could not reach the server. Check your connection.';
+  }
+}
+
+async function doSignOut() {
+  try { await supa.auth.signOut(); } catch(e){}
+  location.reload();
+}
+
+async function onLoggedIn(user) {
+  cloudUser = user;
+  hideLogin();
+  document.getElementById('signout-btn').style.display = 'inline-block';
+  setCloudStatus('SYNCED', 'var(--success)');
+  showToolSelection();
+}
+
+async function cloudLoad() {
+  try {
+    const { data, error } = await supa.from('logs')
+      .select('data,updated_at').eq('user_id', cloudUser.id).eq('tool', currentTool).maybeSingle();
+    if (error) throw error;
+    // Compare cloud copy with the local buffer; keep whichever is newer so unsaved
+    // entries from a dropped connection are never lost.
+    let localObj = null;
+    try { const r = localStorage.getItem(storageKeyFor(currentTool)); localObj = r ? JSON.parse(r) : null; } catch(e){}
+    const cloudObj  = data ? data.data : null;
+    const cloudTime = data ? new Date(data.updated_at).getTime() : 0;
+    const localTime = (localObj && localObj._savedAt) ? localObj._savedAt : 0;
+    const use = (localTime > cloudTime && localObj) ? localObj : (cloudObj || localObj || {});
+    rows = use.rows || [];
+    nextId = use.nextId || (rows.length + 1);
+    dayExtensions = use.dayExtensions || {};
+    if (localTime > cloudTime) cloudSave(); // push the newer local copy up
+  } catch (e) {
+    handleConnectionLoss();
+  }
+}
+
+function scheduleCloudSave() {
+  if (!CLOUD_ENABLED || !cloudUser) return;
+  clearTimeout(cloudSaveTimer);
+  setCloudStatus('SAVING…', 'var(--warning)');
+  cloudSaveTimer = setTimeout(cloudSave, 6000); // flush edits a few seconds after typing stops
+}
+
+async function cloudSave() {
+  if (!CLOUD_ENABLED || !cloudUser) return;
+  clearTimeout(cloudSaveTimer);
+  try {
+    const { error } = await supa.from('logs').upsert(
+      { user_id: cloudUser.id, tool: currentTool, data: { rows, nextId, dayExtensions }, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,tool' }
+    );
+    if (error) throw error;
+    setCloudStatus('SYNCED', 'var(--success)');
+  } catch (e) {
+    handleConnectionLoss();
+  }
+}
+
+function handleConnectionLoss() {
+  if (handlingLoss) return;
+  handlingLoss = true;
+  // Buffer everything locally first so nothing entered is lost
+  try { localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, _savedAt: Date.now() })); } catch(e){}
+  alert('Connection lost. The page will reload and ask you to sign in again.\n\nYour latest entries are saved on this device and will be restored automatically after you sign back in.');
+  location.reload();
+}
+
+function applyToolLabels() {
+  const L = toolLabel();
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  set('app-title', `${L} Hours Log`);
+  set('report-btn', `Monthly ${L.toLowerCase()} report`);
+  set('report-title', `Monthly ${L.toLowerCase()} report`);
+  const bt = document.getElementById('banner-text');
+  if (bt) bt.textContent = `📅 It's the 1st — record last month's ${L.toLowerCase()} hours.`;
+  document.getElementById('back-btn').style.display = 'inline-block';
+}
+
+function showToolSelection() {
+  currentTool = null;
+  document.getElementById('tool-select-overlay').style.display = 'flex';
+  // Offer sign out from the picker too, when signed in
+  const ts = document.getElementById('tool-signout');
+  if (ts) ts.style.display = (CLOUD_ENABLED && cloudUser) ? 'block' : 'none';
+}
+
+async function selectTool(tool) {
+  currentTool = tool;
+  applyToolLabels();
+  document.getElementById('tool-select-overlay').style.display = 'none';
+  newEntriesSinceSave = 0;
+  handlingLoss = false;
+  if (CLOUD_ENABLED && cloudUser) {
+    await cloudLoad();
+  } else {
+    load();
+  }
+  render(); updateStats(); updateSubtitle();
+  showMonthBanner();
+}
+
+async function backToSelection() {
+  // Save current tool's work before leaving
+  if (CLOUD_ENABLED && cloudUser) { await cloudSave(); }
+  else { save(); }
+  document.getElementById('month-banner').style.display = 'none';
+  rows = []; dayExtensions = {}; selectedRowIndex = -1;
+  showToolSelection();
+}
+
+function showMonthBanner() {
+  if (new Date().getUTCDate() === 1) {
+    const b = document.getElementById('month-banner');
+    if (b) b.style.display = 'flex';
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+updateSubtitle(); // clock ticks regardless of tool
+if (CLOUD_ENABLED) {
+  supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  window.addEventListener('offline', handleConnectionLoss);
+  window.addEventListener('beforeunload', () => { if (currentTool && cloudUser) cloudSave(); });
+  supa.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') location.reload(); });
+  showLogin();
+  supa.auth.getSession().then(({ data }) => { if (data.session) onLoggedIn(data.session.user); });
+} else {
+  // Local-only mode (no login) — go straight to the tool picker.
+  showToolSelection();
+}
 </script>
 </body>
 </html>
