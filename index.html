@@ -66,6 +66,11 @@
   .ext-input:focus { border-color: var(--warning); }
   .ext-input.error { border-color: var(--danger); color: var(--danger); }
   .ext-date { flex: 1; text-align: center; }
+  .archive-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
+  .archive-list .arch-item { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: var(--mono); cursor: pointer; text-align: center; }
+  .archive-list .arch-item:hover { border-color: var(--accent); color: var(--accent); }
+  .archive-list .arch-empty { font-size: 11px; color: var(--text-dim); text-align: center; padding: 6px; }
+  body.read-only .add-row-area { display: none !important; }
   .bh-check { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; font-size: 10px; letter-spacing: .04em; color: var(--text-muted); text-transform: none; font-weight: 500; cursor: pointer; vertical-align: middle; }
   .bh-check input { accent-color: var(--warning); cursor: pointer; margin: 0; }
   .bh-check input:disabled { cursor: default; }
@@ -163,7 +168,25 @@
       <span style="font-size:34px;line-height:1">📡</span>Radar
     </button>
   </div>
+  <div id="archive-section" style="width:420px;max-width:92vw;margin-top:10px">
+    <div style="display:flex;gap:16px">
+      <div style="flex:1">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#e3b341;margin-bottom:6px;text-align:center">🗼 Tower — past months</div>
+        <div id="archive-list-tower" class="archive-list"></div>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#58a6ff;margin-bottom:6px;text-align:center">📡 Radar — past months</div>
+        <div id="archive-list-radar" class="archive-list"></div>
+      </div>
+    </div>
+  </div>
   <div id="tool-signout" style="display:none;margin-top:6px"><button onclick="doSignOut()">Sign out</button></div>
+</div>
+
+<!-- Read-only archive banner -->
+<div id="archive-banner" style="display:none;padding:10px 16px;background:#22252b;border-bottom:1px solid var(--border-bright);color:var(--text-muted);font-size:13px;align-items:center;gap:12px">
+  <span id="archive-banner-text">Viewing archived month (read-only)</span>
+  <button onclick="backToSelection()" style="margin-left:auto">← Back to tools</button>
 </div>
 
 <header>
@@ -389,7 +412,7 @@ function recalcDates() {
 }
 
 function save() {
-  if (!currentTool) return;
+  if (!currentTool || viewingArchive) return;
   lastEditTs = Date.now();
   localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, bankHolidays, _savedAt: Date.now() }));
   scheduleCloudSave();
@@ -473,7 +496,7 @@ function addNewDay() {
   setTimeout(() => document.getElementById('newday-date-input').focus(), 50);
 }
 
-function confirmNewDay() {
+async function confirmNewDay() {
   const val = document.getElementById('newday-date-input').value;
   if (!val) return;
   closeModal('newday-modal');
@@ -481,6 +504,8 @@ function confirmNewDay() {
   if (rows.length > 0) {
     rows[rows.length - 1].tow = '';
   }
+  // If this new day is the 1st, archive the finished month(s) and wipe the live view
+  await maybeArchivePreviousMonth(val);
   addRow({ towOnly: true, radarOpen: true, newDay: true, date: val, skipHow: true });
 }
 
@@ -658,6 +683,9 @@ function render() {
 
   attachInputListeners();
   attachExtListeners();
+  if (viewingArchive) {
+    document.querySelectorAll('#log-body input, #log-body button').forEach(el => { el.disabled = true; });
+  }
   markEmptyFields();
   markLongShifts();
   markFlowErrors();
@@ -1378,6 +1406,7 @@ const CLOUD_ENABLED     = !!(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabas
 
 let supa = null, cloudUser = null, cloudSaveTimer = null, handlingLoss = false;
 let realtimeChannel = null, lastEditTs = 0, lastSelfSaveTs = 0;
+let viewingArchive = false;
 
 function setCloudStatus(text, color) {
   const el = document.getElementById('cloud-status');
@@ -1519,12 +1548,125 @@ function applyToolLabels() {
   document.getElementById('back-btn').style.display = 'inline-block';
 }
 
+// ─── Month archiving ──────────────────────────────────────────────────────
+function archiveKeyLocal(tool, month) { return 'archive_' + tool + '_' + month; }
+
+async function archiveMonth(tool, month, data) {
+  // Merge with any existing archive for that month (dedupe rows by id)
+  let existing = null;
+  if (CLOUD_ENABLED && cloudUser) {
+    try {
+      const { data: d } = await supa.from('archived_logs').select('data').eq('tool', tool).eq('month', month).maybeSingle();
+      if (d) existing = d.data;
+    } catch(e){}
+  } else {
+    try { const r = localStorage.getItem(archiveKeyLocal(tool, month)); existing = r ? JSON.parse(r) : null; } catch(e){}
+  }
+  let merged = data;
+  if (existing && existing.rows) {
+    const byId = {};
+    (existing.rows || []).concat(data.rows || []).forEach(r => { byId[r.id] = r; });
+    merged = {
+      rows: Object.values(byId).sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||'')),
+      dayExtensions: Object.assign({}, existing.dayExtensions, data.dayExtensions),
+      bankHolidays: Object.assign({}, existing.bankHolidays, data.bankHolidays)
+    };
+  }
+  // Persist locally always (buffer) + cloud when available
+  try { localStorage.setItem(archiveKeyLocal(tool, month), JSON.stringify(merged)); } catch(e){}
+  if (CLOUD_ENABLED && cloudUser) {
+    try {
+      await supa.from('archived_logs').upsert(
+        { tool, month, data: merged, archived_at: new Date().toISOString() },
+        { onConflict: 'tool,month' });
+    } catch(e){}
+  }
+}
+
+async function listArchivedMonths(tool) {
+  if (CLOUD_ENABLED && cloudUser) {
+    try {
+      const { data } = await supa.from('archived_logs').select('month').eq('tool', tool).order('month', { ascending: false });
+      return (data || []).map(r => r.month);
+    } catch(e){ return []; }
+  }
+  const out = [];
+  const prefix = 'archive_' + tool + '_';
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(prefix)) out.push(k.slice(prefix.length));
+  }
+  return out.sort().reverse();
+}
+
+async function loadArchivedMonth(tool, month) {
+  if (CLOUD_ENABLED && cloudUser) {
+    try {
+      const { data } = await supa.from('archived_logs').select('data').eq('tool', tool).eq('month', month).maybeSingle();
+      return data ? data.data : null;
+    } catch(e){ return null; }
+  }
+  try { const r = localStorage.getItem(archiveKeyLocal(tool, month)); return r ? JSON.parse(r) : null; } catch(e){ return null; }
+}
+
+// When a new day on the 1st is started, archive everything from earlier months.
+async function maybeArchivePreviousMonth(newDate) {
+  if (!newDate || newDate.split('-')[2] !== '01') return;
+  const newMonth = newDate.slice(0,7);
+  const toArchive = rows.filter(r => (r.date || '').slice(0,7) < newMonth && r.date);
+  if (toArchive.length === 0) return;
+  const byMonth = {};
+  toArchive.forEach(r => { const m = (r.date||'').slice(0,7); (byMonth[m] = byMonth[m] || []).push(r); });
+  for (const m of Object.keys(byMonth)) {
+    const exts = {}, bhs = {};
+    Object.keys(dayExtensions).forEach(d => { if (d.slice(0,7) === m) exts[d] = dayExtensions[d]; });
+    Object.keys(bankHolidays).forEach(d => { if (d.slice(0,7) === m) bhs[d] = bankHolidays[d]; });
+    await archiveMonth(currentTool, m, { rows: byMonth[m], dayExtensions: exts, bankHolidays: bhs });
+  }
+  // Drop archived data from the live log
+  rows = rows.filter(r => (r.date || '').slice(0,7) >= newMonth);
+  Object.keys(dayExtensions).forEach(d => { if (d.slice(0,7) < newMonth) delete dayExtensions[d]; });
+  Object.keys(bankHolidays).forEach(d => { if (d.slice(0,7) < newMonth) delete bankHolidays[d]; });
+}
+
+async function renderArchiveLists() {
+  for (const tool of ['tower','radar']) {
+    const el = document.getElementById('archive-list-' + tool);
+    if (!el) continue;
+    el.innerHTML = '<div class="arch-empty">…</div>';
+    const months = await listArchivedMonths(tool);
+    if (!months.length) { el.innerHTML = '<div class="arch-empty">None yet</div>'; continue; }
+    el.innerHTML = months.map(m => `<div class="arch-item" onclick="viewArchivedMonth('${tool}','${m}')">${m}</div>`).join('');
+  }
+}
+
+async function viewArchivedMonth(tool, month) {
+  currentTool = tool;
+  viewingArchive = true;
+  applyToolLabels();
+  stopRealtime();
+  document.getElementById('tool-select-overlay').style.display = 'none';
+  const data = await loadArchivedMonth(tool, month);
+  rows = (data && data.rows) || [];
+  nextId = rows.length + 1;
+  dayExtensions = (data && data.dayExtensions) || {};
+  bankHolidays = (data && data.bankHolidays) || {};
+  document.body.classList.add('read-only');
+  document.getElementById('archive-banner-text').textContent = `Viewing archived ${toolLabel()} log — ${month} (read-only)`;
+  document.getElementById('archive-banner').style.display = 'flex';
+  document.getElementById('month-banner').style.display = 'none';
+  render(); updateStats(); updateSubtitle();
+}
+
 function showToolSelection() {
   currentTool = null;
+  viewingArchive = false;
+  document.body.classList.remove('read-only');
+  document.getElementById('archive-banner').style.display = 'none';
   document.getElementById('tool-select-overlay').style.display = 'flex';
-  // Offer sign out from the picker too, when signed in
   const ts = document.getElementById('tool-signout');
   if (ts) ts.style.display = (CLOUD_ENABLED && cloudUser) ? 'block' : 'none';
+  renderArchiveLists();
 }
 
 async function selectTool(tool) {
@@ -1544,9 +1686,11 @@ async function selectTool(tool) {
 }
 
 async function backToSelection() {
-  // Save current tool's work before leaving
-  if (CLOUD_ENABLED && cloudUser) { await cloudSave(); }
-  else { save(); }
+  // Save current tool's work before leaving (never when viewing a read-only archive)
+  if (!viewingArchive) {
+    if (CLOUD_ENABLED && cloudUser) { await cloudSave(); }
+    else { save(); }
+  }
   stopRealtime();
   document.getElementById('month-banner').style.display = 'none';
   rows = []; dayExtensions = {}; bankHolidays = {}; selectedRowIndex = -1;
