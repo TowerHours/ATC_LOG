@@ -143,25 +143,12 @@
       <div class="radar-icon"></div>
       <h1 style="font-size:15px">Sign in</h1>
     </div>
-    <!-- Step 1: email -->
-    <div id="login-step-email">
-      <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Email</label>
-      <input id="login-email" type="email" autocomplete="username" style="width:100%;margin:6px 0 14px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')sendCode()" />
-      <button class="primary" style="width:100%;padding:10px" onclick="sendCode()">Email me a code</button>
-      <div style="color:var(--text-dim);font-size:11px;margin-top:10px">We'll email you a 6-digit code (valid 15 minutes). No password needed.</div>
-    </div>
-    <!-- Step 2: code -->
-    <div id="login-step-code" style="display:none">
-      <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Enter the code sent to <span id="login-email-echo" style="color:var(--text)"></span></label>
-      <input id="login-code" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" style="width:100%;margin:6px 0 14px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:20px;letter-spacing:.4em;text-align:center;font-family:var(--mono)" oninput="this.value=this.value.replace(/\\D/g,'')" onkeydown="if(event.key==='Enter')verifyCode()" />
-      <button class="primary" style="width:100%;padding:10px" onclick="verifyCode()">Sign in</button>
-      <div style="display:flex;justify-content:space-between;margin-top:10px">
-        <button onclick="backToEmailStep()" style="font-size:12px;padding:4px 8px">← Change email</button>
-        <button onclick="sendCode(true)" style="font-size:12px;padding:4px 8px">Resend code</button>
-      </div>
-    </div>
+    <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Email</label>
+    <input id="login-email" type="email" autocomplete="username" style="width:100%;margin:6px 0 14px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()" />
+    <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Password</label>
+    <input id="login-pw" type="password" autocomplete="current-password" style="width:100%;margin:6px 0 16px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')doLogin()" />
+    <button class="primary" style="width:100%;padding:10px" onclick="doLogin()">Sign in</button>
     <div id="login-error" style="color:var(--danger);font-size:12px;margin-top:10px;min-height:14px"></div>
-    <div id="login-info" style="color:var(--success);font-size:12px;margin-top:2px;min-height:14px"></div>
     <div style="color:var(--text-dim);font-size:11px;margin-top:6px">Your log is saved to the cloud. If the connection drops, the page reloads and asks you to sign in again — your latest entries are kept safe on this device until you're back.</div>
   </div>
 </div>
@@ -1471,50 +1458,18 @@ function showLogin(msg) {
 }
 function hideLogin() { document.getElementById('login-overlay').style.display = 'none'; }
 
-let pendingEmail = '';
-
-async function sendCode(isResend) {
+async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
-  const errEl = document.getElementById('login-error');
-  const infoEl = document.getElementById('login-info');
-  errEl.textContent = ''; infoEl.textContent = '';
-  if (!email) { errEl.textContent = 'Enter your email.'; return; }
+  const pw = document.getElementById('login-pw').value;
+  document.getElementById('login-error').textContent = '';
+  if (!email || !pw) { document.getElementById('login-error').textContent = 'Enter email and password.'; return; }
   try {
-    // shouldCreateUser:false → only accounts you've created in Supabase can sign in
-    const { error } = await supa.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
-    if (error) { errEl.textContent = error.message; return; }
-    pendingEmail = email;
-    document.getElementById('login-email-echo').textContent = email;
-    document.getElementById('login-step-email').style.display = 'none';
-    document.getElementById('login-step-code').style.display = 'block';
-    infoEl.textContent = isResend ? 'New code sent — check your email.' : 'Code sent — check your email.';
-    setTimeout(() => { const el = document.getElementById('login-code'); if (el) el.focus(); }, 50);
-  } catch (e) {
-    errEl.textContent = 'Could not reach the server. Check your connection.';
-  }
-}
-
-async function verifyCode() {
-  const code = document.getElementById('login-code').value.trim();
-  const errEl = document.getElementById('login-error');
-  errEl.textContent = '';
-  if (code.length < 6) { errEl.textContent = 'Enter the 6-digit code.'; return; }
-  try {
-    const { data, error } = await supa.auth.verifyOtp({ email: pendingEmail, token: code, type: 'email' });
-    if (error) { errEl.textContent = 'That code is invalid or has expired. Try again or resend.'; return; }
+    const { data, error } = await supa.auth.signInWithPassword({ email, password: pw });
+    if (error) { document.getElementById('login-error').textContent = error.message; return; }
     onLoggedIn(data.user);
   } catch (e) {
-    errEl.textContent = 'Could not reach the server. Check your connection.';
+    document.getElementById('login-error').textContent = 'Could not reach the server. Check your connection.';
   }
-}
-
-function backToEmailStep() {
-  document.getElementById('login-step-code').style.display = 'none';
-  document.getElementById('login-step-email').style.display = 'block';
-  document.getElementById('login-error').textContent = '';
-  document.getElementById('login-info').textContent = '';
-  document.getElementById('login-code').value = '';
-  setTimeout(() => { const el = document.getElementById('login-email'); if (el) el.focus(); }, 50);
 }
 
 async function doSignOut() {
