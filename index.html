@@ -143,12 +143,25 @@
       <div class="radar-icon"></div>
       <h1 style="font-size:15px">Sign in</h1>
     </div>
-    <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Email</label>
-    <input id="login-email" type="email" autocomplete="username" style="width:100%;margin:6px 0 14px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()" />
-    <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Password</label>
-    <input id="login-pw" type="password" autocomplete="current-password" style="width:100%;margin:6px 0 16px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')doLogin()" />
-    <button class="primary" style="width:100%;padding:10px" onclick="doLogin()">Sign in</button>
+    <!-- Step 1: email -->
+    <div id="login-step-email">
+      <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Email</label>
+      <input id="login-email" type="email" autocomplete="username" style="width:100%;margin:6px 0 14px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:14px" onkeydown="if(event.key==='Enter')sendCode()" />
+      <button class="primary" style="width:100%;padding:10px" onclick="sendCode()">Email me a code</button>
+      <div style="color:var(--text-dim);font-size:11px;margin-top:10px">We'll email you a 6-digit code (valid 15 minutes). No password needed.</div>
+    </div>
+    <!-- Step 2: code -->
+    <div id="login-step-code" style="display:none">
+      <label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Enter the code sent to <span id="login-email-echo" style="color:var(--text)"></span></label>
+      <input id="login-code" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" style="width:100%;margin:6px 0 14px;background:var(--surface2);border:1px solid var(--border-bright);color:var(--text);padding:9px 11px;border-radius:6px;outline:none;font-size:20px;letter-spacing:.4em;text-align:center;font-family:var(--mono)" oninput="this.value=this.value.replace(/\\D/g,'')" onkeydown="if(event.key==='Enter')verifyCode()" />
+      <button class="primary" style="width:100%;padding:10px" onclick="verifyCode()">Sign in</button>
+      <div style="display:flex;justify-content:space-between;margin-top:10px">
+        <button onclick="backToEmailStep()" style="font-size:12px;padding:4px 8px">← Change email</button>
+        <button onclick="sendCode(true)" style="font-size:12px;padding:4px 8px">Resend code</button>
+      </div>
+    </div>
     <div id="login-error" style="color:var(--danger);font-size:12px;margin-top:10px;min-height:14px"></div>
+    <div id="login-info" style="color:var(--success);font-size:12px;margin-top:2px;min-height:14px"></div>
     <div style="color:var(--text-dim);font-size:11px;margin-top:6px">Your log is saved to the cloud. If the connection drops, the page reloads and asks you to sign in again — your latest entries are kept safe on this device until you're back.</div>
   </div>
 </div>
@@ -412,10 +425,37 @@ function recalcDates() {
 }
 
 function save() {
-  if (!currentTool || viewingArchive) return;
+  if (!currentTool) return;
   lastEditTs = Date.now();
+  if (viewingArchive && currentArchiveMonth) {
+    // Editing a past month — save straight back to that month's archive
+    try { localStorage.setItem(archiveKeyLocal(currentTool, currentArchiveMonth), JSON.stringify({ rows, dayExtensions, bankHolidays })); } catch(e){}
+    scheduleArchiveSave();
+    return;
+  }
   localStorage.setItem(storageKeyFor(currentTool), JSON.stringify({ rows, nextId, dayExtensions, bankHolidays, _savedAt: Date.now() }));
   scheduleCloudSave();
+}
+
+function scheduleArchiveSave() {
+  if (!CLOUD_ENABLED || !cloudUser) return;
+  clearTimeout(archiveSaveTimer);
+  setCloudStatus('SAVING…', 'var(--warning)');
+  archiveSaveTimer = setTimeout(() => archiveSaveDirect(currentTool, currentArchiveMonth), 4000);
+}
+
+// Overwrite an archived month with the currently-loaded (edited) data.
+async function archiveSaveDirect(tool, month) {
+  if (!tool || !month) return;
+  const data = { rows, dayExtensions, bankHolidays };
+  try { localStorage.setItem(archiveKeyLocal(tool, month), JSON.stringify(data)); } catch(e){}
+  if (CLOUD_ENABLED && cloudUser) {
+    try {
+      await supa.from('archived_logs').upsert(
+        { tool, month, data, archived_at: new Date().toISOString() }, { onConflict: 'tool,month' });
+      setCloudStatus('SYNCED', 'var(--success)');
+    } catch(e){ handleConnectionLoss(); }
+  }
 }
 
 // Count completed entries so we can push to the cloud every 2 entries.
@@ -499,13 +539,23 @@ function addNewDay() {
 async function confirmNewDay() {
   const val = document.getElementById('newday-date-input').value;
   if (!val) return;
-  closeModal('newday-modal');
-  // At end of day nobody takes over, so clear the TOW of the previous day's last entry
-  if (rows.length > 0) {
-    rows[rows.length - 1].tow = '';
+  const newMonth = val.slice(0,7);
+  // Would this new day roll us into a new month (and archive the old one)?
+  const prevMonths = [...new Set(
+    rows.filter(r => r.date && r.date.slice(0,7) < newMonth).map(r => r.date.slice(0,7))
+  )].sort();
+  const rollover = !viewingArchive && val.split('-')[2] === '01' && prevMonths.length > 0;
+  if (rollover) {
+    const ok = confirm(
+      'Start a new month?\n\n' +
+      'This will archive ' + prevMonths.join(', ') + ' to Past months and clear the live log to begin ' + newMonth + '.\n\n' +
+      'You can still open and edit archived months later from the home screen.'
+    );
+    if (!ok) return; // cancelled — stay on the current month
   }
-  // If this new day is the 1st, archive the finished month(s) and wipe the live view
-  await maybeArchivePreviousMonth(val);
+  closeModal('newday-modal');
+  if (rows.length > 0) rows[rows.length - 1].tow = '';
+  if (rollover) await maybeArchivePreviousMonth(val);
   addRow({ towOnly: true, radarOpen: true, newDay: true, date: val, skipHow: true });
 }
 
@@ -683,9 +733,6 @@ function render() {
 
   attachInputListeners();
   attachExtListeners();
-  if (viewingArchive) {
-    document.querySelectorAll('#log-body input, #log-body button').forEach(el => { el.disabled = true; });
-  }
   markEmptyFields();
   markLongShifts();
   markFlowErrors();
@@ -1406,7 +1453,7 @@ const CLOUD_ENABLED     = !!(SUPABASE_URL && SUPABASE_ANON_KEY && window.supabas
 
 let supa = null, cloudUser = null, cloudSaveTimer = null, handlingLoss = false;
 let realtimeChannel = null, lastEditTs = 0, lastSelfSaveTs = 0;
-let viewingArchive = false;
+let viewingArchive = false, currentArchiveMonth = null, archiveSaveTimer = null;
 
 function setCloudStatus(text, color) {
   const el = document.getElementById('cloud-status');
@@ -1424,18 +1471,50 @@ function showLogin(msg) {
 }
 function hideLogin() { document.getElementById('login-overlay').style.display = 'none'; }
 
-async function doLogin() {
+let pendingEmail = '';
+
+async function sendCode(isResend) {
   const email = document.getElementById('login-email').value.trim();
-  const pw = document.getElementById('login-pw').value;
-  document.getElementById('login-error').textContent = '';
-  if (!email || !pw) { document.getElementById('login-error').textContent = 'Enter email and password.'; return; }
+  const errEl = document.getElementById('login-error');
+  const infoEl = document.getElementById('login-info');
+  errEl.textContent = ''; infoEl.textContent = '';
+  if (!email) { errEl.textContent = 'Enter your email.'; return; }
   try {
-    const { data, error } = await supa.auth.signInWithPassword({ email, password: pw });
-    if (error) { document.getElementById('login-error').textContent = error.message; return; }
+    // shouldCreateUser:false → only accounts you've created in Supabase can sign in
+    const { error } = await supa.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+    if (error) { errEl.textContent = error.message; return; }
+    pendingEmail = email;
+    document.getElementById('login-email-echo').textContent = email;
+    document.getElementById('login-step-email').style.display = 'none';
+    document.getElementById('login-step-code').style.display = 'block';
+    infoEl.textContent = isResend ? 'New code sent — check your email.' : 'Code sent — check your email.';
+    setTimeout(() => { const el = document.getElementById('login-code'); if (el) el.focus(); }, 50);
+  } catch (e) {
+    errEl.textContent = 'Could not reach the server. Check your connection.';
+  }
+}
+
+async function verifyCode() {
+  const code = document.getElementById('login-code').value.trim();
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  if (code.length < 6) { errEl.textContent = 'Enter the 6-digit code.'; return; }
+  try {
+    const { data, error } = await supa.auth.verifyOtp({ email: pendingEmail, token: code, type: 'email' });
+    if (error) { errEl.textContent = 'That code is invalid or has expired. Try again or resend.'; return; }
     onLoggedIn(data.user);
   } catch (e) {
-    document.getElementById('login-error').textContent = 'Could not reach the server. Check your connection.';
+    errEl.textContent = 'Could not reach the server. Check your connection.';
   }
+}
+
+function backToEmailStep() {
+  document.getElementById('login-step-code').style.display = 'none';
+  document.getElementById('login-step-email').style.display = 'block';
+  document.getElementById('login-error').textContent = '';
+  document.getElementById('login-info').textContent = '';
+  document.getElementById('login-code').value = '';
+  setTimeout(() => { const el = document.getElementById('login-email'); if (el) el.focus(); }, 50);
 }
 
 async function doSignOut() {
@@ -1643,16 +1722,16 @@ async function renderArchiveLists() {
 async function viewArchivedMonth(tool, month) {
   currentTool = tool;
   viewingArchive = true;
+  currentArchiveMonth = month;
   applyToolLabels();
   stopRealtime();
   document.getElementById('tool-select-overlay').style.display = 'none';
   const data = await loadArchivedMonth(tool, month);
   rows = (data && data.rows) || [];
-  nextId = rows.length + 1;
+  nextId = (rows.reduce((mx,r)=>Math.max(mx, r.id||0), 0)) + 1;
   dayExtensions = (data && data.dayExtensions) || {};
   bankHolidays = (data && data.bankHolidays) || {};
-  document.body.classList.add('read-only');
-  document.getElementById('archive-banner-text').textContent = `Viewing archived ${toolLabel()} log — ${month} (read-only)`;
+  document.getElementById('archive-banner-text').textContent = `Editing archived ${toolLabel()} log — ${month} (changes save to this month)`;
   document.getElementById('archive-banner').style.display = 'flex';
   document.getElementById('month-banner').style.display = 'none';
   render(); updateStats(); updateSubtitle();
@@ -1661,6 +1740,7 @@ async function viewArchivedMonth(tool, month) {
 function showToolSelection() {
   currentTool = null;
   viewingArchive = false;
+  currentArchiveMonth = null;
   document.body.classList.remove('read-only');
   document.getElementById('archive-banner').style.display = 'none';
   document.getElementById('tool-select-overlay').style.display = 'flex';
@@ -1686,8 +1766,10 @@ async function selectTool(tool) {
 }
 
 async function backToSelection() {
-  // Save current tool's work before leaving (never when viewing a read-only archive)
-  if (!viewingArchive) {
+  // Save current work before leaving — to the archive if editing one, else to the live log
+  if (viewingArchive) {
+    if (currentArchiveMonth) await archiveSaveDirect(currentTool, currentArchiveMonth);
+  } else {
     if (CLOUD_ENABLED && cloudUser) { await cloudSave(); }
     else { save(); }
   }
