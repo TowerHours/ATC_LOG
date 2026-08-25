@@ -86,6 +86,8 @@
   input.cell-input.empty-field { border-color: var(--danger) !important; background: rgba(248,81,73,0.07); }
   input.cell-input.long-shift { border-color: #b8860b !important; background: rgba(210,153,34,0.13); color: #f0c040 !important; }
   input.cell-input.ojti-input { font-size: 14px; font-weight: 600; color: #c08af0; }
+  input.cell-input.ojti-warn { border-color: #b8860b !important; box-shadow: 0 0 0 2px rgba(210,153,34,0.28); }
+  input.cell-input.ojti-error { border-color: var(--danger) !important; box-shadow: 0 0 0 2px rgba(248,81,73,0.30); color: #ff8a80 !important; }
   input.cell-input.over-shift { border-color: var(--danger) !important; background: rgba(248,81,73,0.16); color: #ff8a80 !important; }
   input.cell-input.ojti-input::placeholder { color: var(--text-dim); }
   .ojti-head { color: #c08af0 !important; }
@@ -130,7 +132,7 @@
   tr.radar-close-row { box-shadow: inset 3px 0 0 var(--danger); }
   tr.data-row.flow-error { background: rgba(248,81,73,0.07); }
   .flow-warn { color: var(--danger); cursor: help; font-size: 12px; margin-left: 2px; }
-  #stat-flow.has-issues { color: var(--danger); }
+  #stat-flow.has-issues, #stat-ojti.has-issues { color: var(--danger); }
 
 </style>
 </head>
@@ -257,6 +259,7 @@
   <div class="stat"><div class="stat-label">Controllers</div><div class="stat-value" id="stat-controllers">—</div></div>
   <div class="stat"><div class="stat-label">Last entry</div><div class="stat-value" id="stat-last">—</div></div>
   <div class="stat"><div class="stat-label">Flow issues</div><div class="stat-value" id="stat-flow">0</div></div>
+  <div class="stat"><div class="stat-label">OJTI issues</div><div class="stat-value" id="stat-ojti">0</div></div>
 </footer>
 
 <!-- New day date picker modal -->
@@ -723,6 +726,7 @@ function render() {
   markEmptyFields();
   markLongShifts();
   markFlowErrors();
+  markOjtiIssues();
   // Re-apply selected row highlight after re-render
   if (selectedRowIndex >= 0) {
     const selTr = document.querySelector(`tr.data-row[data-idx="${selectedRowIndex}"]`);
@@ -795,6 +799,98 @@ function computeFlowErrors() {
     }
   });
   return errors;
+}
+
+// Flatten controller seat sessions into {ctrl,start,end,date} with minute times.
+function buildSeatSessions() {
+  const sessions = [];
+  const shifts = buildControllerShifts();
+  Object.entries(shifts).forEach(([ctrl, recs]) => {
+    recs.forEach(r => {
+      const s = timeToMins(r.start); let e = timeToMins(r.end);
+      if (s !== null && e !== null) { if (e < s) e += 1440; sessions.push({ ctrl, start: s, end: e, date: r.date }); }
+    });
+  });
+  return sessions;
+}
+
+// Validate OJTI in/out windows and return { rowIdx: {level, msgs} }.
+// Flags: spans >1 day, unrealistic length, in==out, unpaired, and windows that
+// credit nobody or spread across an implausible number of controllers.
+function computeOjtiIssues() {
+  const out = {}; // "idx:field" -> { level, msgs:[] }
+  const flag = (idx, field, level, msg) => {
+    const k = idx + ':' + field;
+    if (!out[k]) out[k] = { level: 'warn', msgs: [] };
+    out[k].msgs.push(msg);
+    if (level === 'error') out[k].level = 'error';
+  };
+
+  // Build OJTI events in row order (an IN must be closed by an OUT before the next IN).
+  const events = [];
+  rows.forEach((r, idx) => {
+    if (r.ojtiIn) { if (validateTime(r.ojtiIn)) events.push({ type:'in', idx, mins: timeToMins(r.ojtiIn), date: r.date }); else flag(idx,'ojtiIn','error','OJTI in is not a valid time'); }
+    if (r.ojtiOut){ if (validateTime(r.ojtiOut)) events.push({ type:'out', idx, mins: timeToMins(r.ojtiOut), date: r.date }); else flag(idx,'ojtiOut','error','OJTI out is not a valid time'); }
+  });
+
+  // Pair as a sequence: the open IN stays open until its OUT. A second IN with no
+  // OUT between means the FIRST in is the incomplete one.
+  const windows = [];
+  let openIn = null;
+  events.forEach(ev => {
+    if (ev.type === 'in') {
+      if (openIn) flag(openIn.idx, 'ojtiIn', 'error', 'OJTI in has no matching out');
+      openIn = ev;
+    } else {
+      if (openIn) { windows.push({ a: openIn, b: ev }); openIn = null; }
+      else flag(ev.idx, 'ojtiOut', 'error', 'OJTI out has no matching in');
+    }
+  });
+  if (openIn) flag(openIn.idx, 'ojtiIn', 'error', 'OJTI in has no matching out');
+
+  // Validate each complete window
+  const sessions = buildSeatSessions();
+  windows.forEach(({ a, b }) => {
+    const crossesMidnight = b.mins < a.mins;
+    const multiDay = (a.date && b.date && a.date !== b.date) || crossesMidnight;
+    let dur = b.mins - a.mins; if (dur < 0) dur += 1440;
+    const both = (level, msg) => { flag(a.idx,'ojtiIn',level,msg); flag(b.idx,'ojtiOut',level,msg); };
+
+    if (multiDay) both('error','OJTI spans more than one day — check in/out');
+    if (dur === 0) flag(a.idx,'ojtiIn','error','OJTI in and out are the same time');
+    if (dur > 720) both('error',`OJTI window is ${fmtDur(dur)} — unrealistically long`);
+    else if (dur > 360) both('warn',`OJTI window is ${fmtDur(dur)} — please check`);
+
+    const hit = new Set();
+    sessions.forEach(s => {
+      if (s.date !== a.date) return;
+      const lo = Math.max(s.start, a.mins), hi = Math.min(s.end, crossesMidnight ? b.mins + 1440 : b.mins);
+      if (hi > lo) hit.add(s.ctrl);
+    });
+    if (hit.size === 0) both('error','OJTI overlaps nobody in the seat — no one is credited');
+    else if (hit.size > 4) both('warn',`OJTI spread across ${hit.size} controllers — check the window`);
+  });
+
+  return out;
+}
+
+function markOjtiIssues() {
+  const issues = computeOjtiIssues();
+  const rowsWithIssues = new Set();
+  document.querySelectorAll('.ojti-input').forEach(inp => {
+    const k = inp.dataset.row + ':' + inp.dataset.field;
+    inp.classList.remove('ojti-warn','ojti-error');
+    inp.removeAttribute('title');
+    const it = issues[k];
+    if (it) {
+      inp.classList.add(it.level === 'error' ? 'ojti-error' : 'ojti-warn');
+      inp.title = it.msgs.join(' • ');
+      rowsWithIssues.add(inp.dataset.row);
+    }
+  });
+  const count = rowsWithIssues.size;
+  const el = document.getElementById('stat-ojti');
+  if (el) { el.textContent = count; el.classList.toggle('has-issues', count > 0); }
 }
 
 function markFlowErrors() {
@@ -1029,11 +1125,11 @@ function updateStats() {
   document.getElementById('stat-last').textContent = last ? last.time.slice(0,2)+':'+last.time.slice(2) : '—';
 }
 
-function calcSummary() {
+function calcSummary(rowsArg) {
   // summary[month][ctrl] = { mins, ojti }
   // Built from full seat sessions (TOW -> HOW) so OJTI window overlap is applied consistently.
   const summary = {};
-  const shifts = buildControllerShifts();
+  const shifts = buildControllerShifts(rowsArg);
   Object.entries(shifts).forEach(([ctrl, recs]) => {
     recs.forEach(r => {
       const monthKey = (r.date || '?').slice(0,7);
@@ -1046,52 +1142,117 @@ function calcSummary() {
   return summary;
 }
 
+// Combine the live log with every archived month for the current tool (deduped by id).
+async function gatherAllData() {
+  const byId = {};
+  rows.forEach(r => { byId[r.id] = r; });
+  try {
+    const months = await listArchivedMonths(currentTool);
+    for (const m of months) {
+      const d = await loadArchivedMonth(currentTool, m);
+      if (d && d.rows) d.rows.forEach(r => { if (!(r.id in byId)) byId[r.id] = r; });
+    }
+  } catch(e){}
+  const all = Object.values(byId);
+  all.sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.time||'').localeCompare(b.time||''));
+  return all;
+}
+
+// Sum a byMonth summary into byYear totals.
+function summaryByYear(byMonth) {
+  const byYear = {};
+  Object.keys(byMonth).forEach(month => {
+    const year = month.slice(0,4);
+    if (!byYear[year]) byYear[year] = {};
+    Object.entries(byMonth[month]).forEach(([ctrl, rec]) => {
+      if (!byYear[year][ctrl]) byYear[year][ctrl] = { mins: 0, ojti: 0 };
+      byYear[year][ctrl].mins += rec.mins;
+      byYear[year][ctrl].ojti += rec.ojti;
+    });
+  });
+  return byYear;
+}
+
 function minsToHHMM(mins) {
   return `${Math.floor(mins/60)}h ${pad(mins%60)}m`;
 }
 
-function openSummary() {
-  const summary = calcSummary();
+let lastSummaryAll = null; // combined rows used for the last summary (for CSV export)
+
+async function openSummary() {
+  document.getElementById('summary-body').innerHTML = '<p style="color:var(--text-muted);font-size:13px">Gathering all months…</p>';
+  document.getElementById('summary-modal').classList.add('open');
+  const allRows = await gatherAllData();
+  lastSummaryAll = allRows;
+  const summary = calcSummary(allRows);
+  const byYear = summaryByYear(summary);
   const months = Object.keys(summary).sort();
-  let html = months.length === 0
-    ? '<p style="color:var(--text-muted);font-size:13px">No complete entries to summarise yet.</p>'
-    : '';
+  const years = Object.keys(byYear).sort();
+
+  if (months.length === 0) {
+    document.getElementById('summary-body').innerHTML = '<p style="color:var(--text-muted);font-size:13px">No complete entries to summarise yet.</p>';
+    return;
+  }
+
+  let html = '';
+  // Year totals first (01 Jan – 31 Dec, calendar year)
+  years.forEach(year => {
+    html += `<div style="margin-bottom:22px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--accent);margin-bottom:8px">${year} — YEAR TOTAL (01 Jan → 31 Dec)</div>
+      <table class="export-table"><thead><tr><th>Controller</th><th>Total time</th><th style="color:#c08af0">OJTI</th><th>Shifts</th></tr></thead><tbody>`;
+    Object.entries(byYear[year]).sort((a,b)=>b[1].mins-a[1].mins).forEach(([ctrl, rec]) => {
+      const shifts = allRows.filter(r => r.date && r.date.slice(0,4) === year && r.tow === ctrl).length;
+      const ojtiCell = rec.ojti > 0 ? minsToHHMM(rec.ojti) : '—';
+      html += `<tr><td>${ctrl}</td><td><b>${minsToHHMM(rec.mins)}</b></td><td style="color:#c08af0">${ojtiCell}</td><td>${shifts}</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  });
+
+  // Then the monthly breakdown
+  html += '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin:6px 0 10px;border-top:1px solid var(--border);padding-top:12px">Monthly breakdown</div>';
   months.forEach(month => {
     html += `<div style="margin-bottom:20px"><div style="font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--warning);margin-bottom:8px">${month}</div>
       <table class="export-table"><thead><tr><th>Controller</th><th>Total time</th><th style="color:#c08af0">OJTI</th><th>Shifts</th></tr></thead><tbody>`;
     Object.entries(summary[month]).sort((a,b)=>b[1].mins-a[1].mins).forEach(([ctrl, rec]) => {
-      const shifts = rows.filter(r => r.date && r.date.startsWith(month) && r.tow === ctrl).length;
+      const shifts = allRows.filter(r => r.date && r.date.startsWith(month) && r.tow === ctrl).length;
       const ojtiCell = rec.ojti > 0 ? minsToHHMM(rec.ojti) : '—';
       html += `<tr><td>${ctrl}</td><td>${minsToHHMM(rec.mins)}</td><td style="color:#c08af0">${ojtiCell}</td><td>${shifts}</td></tr>`;
     });
     html += `</tbody></table></div>`;
   });
   document.getElementById('summary-body').innerHTML = html;
-  document.getElementById('summary-modal').classList.add('open');
 }
 
-function exportSummaryCSV() {
-  const summary = calcSummary();
-  let csv = 'Month,Controller,Total (h:mm),OJTI (h:mm)\n';
-  Object.keys(summary).sort().forEach(month => {
-    Object.entries(summary[month]).sort().forEach(([ctrl, rec]) => {
-      const h = Math.floor(rec.mins/60); const m = rec.mins%60;
-      const oh = Math.floor(rec.ojti/60); const om = rec.ojti%60;
-      const ojtiStr = rec.ojti > 0 ? `${oh}:${pad(om)}` : '';
-      csv += `${month},${ctrl},${h}:${pad(m)},${ojtiStr}\n`;
+async function exportSummaryCSV() {
+  const allRows = lastSummaryAll || await gatherAllData();
+  const summary = calcSummary(allRows);
+  const byYear = summaryByYear(summary);
+  const fmt = v => `${Math.floor(v/60)}:${pad(v%60)}`;
+  let csv = 'Period,Type,Controller,Total (h:mm),OJTI (h:mm)\n';
+  // Year totals
+  Object.keys(byYear).sort().forEach(year => {
+    Object.entries(byYear[year]).sort().forEach(([ctrl, rec]) => {
+      csv += `${year},YEAR,${ctrl},${fmt(rec.mins)},${rec.ojti>0?fmt(rec.ojti):''}\n`;
     });
   });
-  downloadCSV(csv, 'atc_monthly_summary.csv');
+  // Monthly
+  Object.keys(summary).sort().forEach(month => {
+    Object.entries(summary[month]).sort().forEach(([ctrl, rec]) => {
+      csv += `${month},MONTH,${ctrl},${fmt(rec.mins)},${rec.ojti>0?fmt(rec.ojti):''}\n`;
+    });
+  });
+  downloadCSV(csv, 'atc_controller_summary.csv');
 }
 
 // Build per-controller shift records: { ctrl -> [{date, start, end, durMins}] }
 // Collect OJTI training windows: pair OJTI IN times with OJTI OUT times in row order.
 // Each window = { date, inMins, outMins }. The window is later split across whichever
 // controllers held the seat during it.
-function collectOjtiWindows() {
+function collectOjtiWindows(rowsArg) {
+  const src = rowsArg || rows;
   const ins = [];  // { mins, date }
   const outs = []; // { mins, date }
-  rows.forEach(row => {
+  src.forEach(row => {
     if (row.ojtiIn && validateTime(row.ojtiIn)) ins.push({ mins: timeToMins(row.ojtiIn), date: row.date });
     if (row.ojtiOut && validateTime(row.ojtiOut)) outs.push({ mins: timeToMins(row.ojtiOut), date: row.date });
   });
@@ -1118,11 +1279,12 @@ function ojtiOverlapForSession(sStart, sEnd, sDate, windows) {
   return total;
 }
 
-function buildControllerShifts() {
+function buildControllerShifts(rowsArg) {
+  const src = rowsArg || rows;
   const shifts = {}; // ctrl -> array of {date, start, end, durMins, ojtiMins}
   const towStart = {}; // ctrl -> {time, date, rowIdx}
-  const windows = collectOjtiWindows();
-  rows.forEach((row, idx) => {
+  const windows = collectOjtiWindows(src);
+  src.forEach((row, idx) => {
     if (row.how && row.time && validateTime(row.time)) {
       const ctrl = row.how;
       const startEntry = towStart[ctrl];
