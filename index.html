@@ -63,7 +63,7 @@
   body.light thead th { color: var(--text-muted); }
   body.light .radar-icon { border-color: var(--accent); }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-weight: 600; min-height: 100vh; display: flex; flex-direction: column; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-weight: 600; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
   header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 60; }
   .header-left { display: flex; align-items: center; gap: 12px; }
   .radar-icon { width: 32px; height: 32px; border: 2px solid var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
@@ -135,7 +135,7 @@
   .ojti-head { color: #c08af0 !important; }
   .delete-btn { background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 4px; line-height: 1; font-family: var(--sans); transition: color 0.15s, background 0.15s; width: 100%; display: block; }
   .delete-btn:hover { color: var(--danger); background: #2d1b1b; }
-  .add-row-area { padding: 10px 16px; border-top: 2px solid var(--border-bright); background: var(--surface); display: flex; gap: 8px; position: sticky; bottom: 0; z-index: 55; flex-wrap: wrap; }
+  .add-row-area { padding: 10px 16px; border-top: 2px solid var(--border-bright); background: var(--surface); display: flex; gap: 8px; z-index: 55; flex-wrap: wrap; flex-shrink: 0; }
   .issues-box { margin-left: auto; padding: 3px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 2px solid; }
   .issues-box.ok { color: var(--success); border-color: var(--success); background: rgba(63,185,80,0.08); }
   .issues-box.bad { color: var(--danger); border-color: var(--danger); background: rgba(248,81,73,0.12); }
@@ -969,6 +969,13 @@ function markOjtiIssues() {
   updateIssuesBox();
 }
 
+function revalidate() {
+  markEmptyFields();
+  markLongShifts();
+  markFlowErrors();
+  markOjtiIssues();
+}
+
 function markFlowErrors() {
   const errs = computeFlowErrors();
   document.querySelectorAll('tr.data-row').forEach(tr => {
@@ -1126,6 +1133,8 @@ function attachInputListeners() {
         updateField(idx, field, val);
         if (val) inp.classList.remove('empty-field'); else inp.classList.add('empty-field');
       }
+      // Re-check flow / OJTI issues live so fixing one clears the red immediately
+      revalidate();
     });
 
     inp.addEventListener('keydown', e => {
